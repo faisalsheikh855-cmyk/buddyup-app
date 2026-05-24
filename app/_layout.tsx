@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ActivityIndicator, AppState, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, View } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -17,6 +17,7 @@ export default function RootLayout() {
   const setSession = useSessionStore((state) => state.setSession);
   const setAuthReady = useSessionStore((state) => state.setAuthReady);
   const setStorageReady = useSessionStore((state) => state.setStorageReady);
+  const ready = Platform.OS === "web" || (storageReady && authReady);
 
   useEffect(() => subscribeToAppFocus(), []);
 
@@ -26,7 +27,9 @@ export default function RootLayout() {
       if (mounted) setStorageReady(true);
     }, 1500);
 
-    void Promise.resolve(useSessionStore.persist.rehydrate())
+    void useSessionStore
+      .getState()
+      .hydrate()
       .catch(() => undefined)
       .finally(() => {
         clearTimeout(storageTimeout);
@@ -85,7 +88,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          {!storageReady || !authReady ? (
+          {!ready ? (
             <View className="flex-1 items-center justify-center bg-canvas">
               <ActivityIndicator size="large" color={colors.brand} />
             </View>

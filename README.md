@@ -29,7 +29,7 @@ Use `i` for the iOS simulator or `a` for an Android emulator. Native modules and
 
 ## Netlify Web Deployment
 
-BuddyUp remains an iOS/Android Expo app, while its Expo web export deploys to Netlify as a companion web experience. Production does not depend on a local Metro server. `netlify.toml` runs `npm run build:web`, publishes `dist`, and contains a non-forced fallback rewrite for unmatched client routes. Expo-generated HTML files and bundled assets continue to be served directly.
+BuddyUp remains an iOS/Android Expo app, while its Expo web export deploys to Netlify as a companion web experience. Production does not depend on a local Metro server. `netlify.toml` runs `npm run build:web`, publishes `dist`, routes `/` to the prerendered onboarding experience, and contains a non-forced fallback rewrite for unmatched client routes. Expo-generated HTML files and bundled assets continue to be served directly.
 
 ### Deploy
 
@@ -55,7 +55,7 @@ Do not add a Supabase secret key or `service_role` key to this Expo web build. V
 
 ### Route Handling
 
-Expo Router is configured with `web.output: "static"` and emits HTML pages for known routes during `npm run build:web`. The Netlify rewrite uses `force = false`, so those generated pages and `_expo` assets are served normally. For an app URL not represented by a generated file, Netlify serves `/index.html` with status `200`, allowing Expo Router to handle the path after browser startup instead of returning a refresh-time 404.
+Expo Router is configured with `web.output: "static"` and emits HTML pages for known routes during `npm run build:web`. Netlify directs the empty static root redirect page to `/onboarding`, which contains visible prerendered UI for first visits. The fallback rewrite uses `force = false`, so other generated pages and `_expo` assets are served normally. For an app URL not represented by a generated file, Netlify serves `/index.html` with status `200`, allowing Expo Router to handle the path after browser startup instead of returning a refresh-time 404.
 
 Native iOS and Android releases use Expo EAS builds and the Apple App Store / Google Play Store, rather than Netlify hosting.
 

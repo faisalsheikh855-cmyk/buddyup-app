@@ -5,6 +5,14 @@
 [build.environment]
   NODE_VERSION = "22.13.0"
 
+# The generated root route is a client redirect with no visible static UI.
+# Start first visits on the prerendered onboarding experience.
+[[redirects]]
+  from = "/"
+  to = "/onboarding"
+  status = 302
+  force = true
+
 # Existing Expo static HTML and assets win. Unmatched client-side routes
 # still load the app shell so refresh/deep links do not return Netlify 404s.
 [[redirects]]

@@ -96,6 +96,7 @@ The existing Supabase SQL remains the baseline for profiles, activities, request
 ## Deployment
 
 - Netlify deploys the universal web build using `npm run build:web` and publishes `dist`.
+- The production root URL redirects to the prerendered onboarding route so first paint contains visible application UI rather than Expo Router's empty redirect document.
 - Expo-generated static routes are served directly; a non-forced Netlify rewrite loads `index.html` only for unmatched app routes so browser refreshes do not fail with a CDN 404.
 - Netlify environment variables provide the public Supabase URL and publishable client key at web build time.
 - iOS and Android releases use EAS Build and platform stores; Netlify does not distribute native application binaries.

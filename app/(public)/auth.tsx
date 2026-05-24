@@ -54,12 +54,12 @@ export default function AuthScreen() {
           <Ionicons name="chevron-back" size={23} color={colors.ink} />
         </Pressable>
       </View>
-      <Animated.View entering={FadeInDown.duration(380)} className="flex-1 justify-center pb-9">
+      <Animated.View entering={FadeInDown.duration(380)} className="w-full min-w-0 flex-1 justify-center pb-9">
         <Text className="mb-2 text-[14px] font-bold text-brand">BuddyUp</Text>
-        <Text className="mb-3 text-[31px] font-bold leading-[37px] text-ink">
+        <Text className="block w-full mb-3 text-[31px] font-bold leading-[37px] text-ink">
           {mode === "signup" ? "Find your activity crew" : "Welcome back"}
         </Text>
-        <Text className="mb-8 text-[15px] leading-6 text-muted">
+        <Text className="block w-full mb-8 text-[15px] leading-6 text-muted">
           {mode === "signup" ? "Connect through plans, sports and spontaneous hangs." : "Your next plan is one tap away."}
         </Text>
         <View className="mb-7 h-[52px] flex-row rounded-app bg-[#ECF0ED] p-1">
@@ -103,7 +103,7 @@ export default function AuthScreen() {
         ) : null}
         {!isSupabaseConfigured ? (
           <View className="mt-5 rounded-app border border-line bg-white px-4 py-3">
-            <Text className="text-[13px] leading-5 text-muted">Add Expo Supabase environment keys to enable authentication.</Text>
+            <Text className="block w-full text-[13px] leading-5 text-muted">Add Expo Supabase environment keys to enable authentication.</Text>
             <View className="mt-3">
               <Button
                 variant="secondary"

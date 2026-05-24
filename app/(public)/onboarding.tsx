@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FlatList, ImageBackground, Pressable, Text, useWindowDimensions, View, ViewToken } from "react-native";
+import { FlatList, ImageBackground, Platform, Pressable, Text, useWindowDimensions, View, ViewToken } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Animated, { interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -20,9 +20,9 @@ function ProgressDot({ index, scrollX, width }: { index: number; scrollX: Shared
   return <Animated.View className="h-2 rounded-full bg-brand" style={animatedStyle} />;
 }
 
-function Slide({ item, width }: { item: OnboardingSlide; width: number }) {
+function Slide({ item, width }: { item: OnboardingSlide; width?: number }) {
   return (
-    <View style={{ width }} className="flex-1 px-5 pb-2 pt-3">
+    <View style={width ? { width } : undefined} className="w-full min-w-0 flex-1 px-5 pb-2 pt-3">
       <View className="h-[46%] min-h-[315px] overflow-hidden rounded-app bg-brand-soft">
         <ImageBackground
           source={require("../../assets/images/onboarding-hero.jpg")}
@@ -45,8 +45,8 @@ function Slide({ item, width }: { item: OnboardingSlide; width: number }) {
       </View>
       <View className="flex-1 pt-8">
         <Text className="mb-3 text-[13px] font-bold uppercase text-brand">{item.eyebrow}</Text>
-        <Text className="mb-4 text-[31px] font-bold leading-[37px] text-ink">{item.title}</Text>
-        <Text className="text-[16px] leading-6 text-muted">{item.copy}</Text>
+        <Text className="block w-full mb-4 text-[31px] font-bold leading-[37px] text-ink">{item.title}</Text>
+        <Text className="block w-full text-[16px] leading-6 text-muted">{item.copy}</Text>
       </View>
     </View>
   );
@@ -54,6 +54,7 @@ function Slide({ item, width }: { item: OnboardingSlide; width: number }) {
 
 export default function OnboardingScreen() {
   const { width } = useWindowDimensions();
+  const webFrameWidth = Math.min(width || 390, 480);
   const listRef = useRef<FlatList<OnboardingSlide>>(null);
   const scrollX = useSharedValue(0);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -75,6 +76,10 @@ export default function OnboardingScreen() {
       finish();
       return;
     }
+    if (Platform.OS === "web") {
+      setActiveIndex((current) => current + 1);
+      return;
+    }
     listRef.current?.scrollToIndex({ animated: true, index: activeIndex + 1 });
   }
 
@@ -83,7 +88,10 @@ export default function OnboardingScreen() {
   }).current;
 
   return (
-    <View className="flex-1 bg-canvas pt-12">
+    <View
+      className="w-full min-w-0 flex-1 overflow-hidden bg-canvas pt-12"
+      style={Platform.OS === "web" ? { alignSelf: "center", maxWidth: "100%", width: webFrameWidth } : undefined}
+    >
       <View className="h-10 flex-row items-center justify-between px-5">
         <Text className="text-[22px] font-bold text-brand">BuddyUp</Text>
         {activeIndex < onboardingSlides.length - 1 ? (
@@ -92,24 +100,32 @@ export default function OnboardingScreen() {
           </Pressable>
         ) : <View className="w-8" />}
       </View>
-      <AnimatedList
-        ref={listRef}
-        data={onboardingSlides}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <Slide item={item} width={width} />}
-        horizontal
-        pagingEnabled
-        bounces={false}
-        showsHorizontalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-      />
+      {Platform.OS === "web" ? (
+        <Slide item={onboardingSlides[activeIndex]} width={webFrameWidth} />
+      ) : (
+        <AnimatedList
+          ref={listRef}
+          data={onboardingSlides}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <Slide item={item} width={width} />}
+          horizontal
+          pagingEnabled
+          bounces={false}
+          showsHorizontalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        />
+      )}
       <View className="gap-6 px-5 pb-8">
         <View className="h-3 flex-row items-center justify-center gap-2">
           {onboardingSlides.map((slide, index) => (
-            <ProgressDot key={slide.id} index={index} scrollX={scrollX} width={width} />
+            Platform.OS === "web" ? (
+              <View key={slide.id} className="h-2 rounded-full bg-brand" style={{ width: activeIndex === index ? 28 : 8, opacity: activeIndex === index ? 1 : 0.4 }} />
+            ) : (
+              <ProgressDot key={slide.id} index={index} scrollX={scrollX} width={Math.max(width, 1)} />
+            )
           ))}
         </View>
         <Button
