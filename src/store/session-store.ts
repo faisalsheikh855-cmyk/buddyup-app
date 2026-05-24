@@ -38,7 +38,8 @@ export const useSessionStore = create<SessionState>()(
       name: "buddyup-session",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ onboarded: state.onboarded }),
-      onRehydrateStorage: () => (state) => state?.setStorageReady(true),
+      // Static web output renders before browser storage exists; hydrate after mount.
+      skipHydration: true,
     },
   ),
 );

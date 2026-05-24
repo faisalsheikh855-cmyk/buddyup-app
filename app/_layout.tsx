@@ -16,8 +16,28 @@ export default function RootLayout() {
   const authReady = useSessionStore((state) => state.authReady);
   const setSession = useSessionStore((state) => state.setSession);
   const setAuthReady = useSessionStore((state) => state.setAuthReady);
+  const setStorageReady = useSessionStore((state) => state.setStorageReady);
 
   useEffect(() => subscribeToAppFocus(), []);
+
+  useEffect(() => {
+    let mounted = true;
+    const storageTimeout = setTimeout(() => {
+      if (mounted) setStorageReady(true);
+    }, 1500);
+
+    void Promise.resolve(useSessionStore.persist.rehydrate())
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(storageTimeout);
+        if (mounted) setStorageReady(true);
+      });
+
+    return () => {
+      mounted = false;
+      clearTimeout(storageTimeout);
+    };
+  }, [setStorageReady]);
 
   useEffect(() => {
     if (!supabase) {
@@ -25,15 +45,27 @@ export default function RootLayout() {
       return;
     }
     const client = supabase;
+    let mounted = true;
+    const authTimeout = setTimeout(() => {
+      if (mounted) setAuthReady(true);
+    }, 2000);
 
-    void client.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthReady(true);
-    });
+    void client.auth
+      .getSession()
+      .then(({ data }) => {
+        if (mounted) setSession(data.session);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(authTimeout);
+        if (mounted) setAuthReady(true);
+      });
 
     const { data } = client.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setAuthReady(true);
+      if (mounted) {
+        setSession(session);
+        setAuthReady(true);
+      }
     });
 
     const appState = AppState.addEventListener("change", (state) => {
@@ -42,6 +74,8 @@ export default function RootLayout() {
     });
 
     return () => {
+      mounted = false;
+      clearTimeout(authTimeout);
       data.subscription.unsubscribe();
       appState.remove();
     };
