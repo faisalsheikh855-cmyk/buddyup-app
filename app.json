@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "BuddyUp",
+    "slug": "buddyup",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "buddyup",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "web": {
+      "output": "static"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.buddyup.mobile"
+    },
+    "android": {
+      "package": "com.buddyup.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#087F63"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "BuddyUp uses your location to show nearby activity partners."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BuddyUp lets you choose photos for your profile and activities.",
+          "cameraPermission": "BuddyUp uses your camera for profile and activity photos.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
