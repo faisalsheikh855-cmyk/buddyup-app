@@ -1,6 +1,11 @@
 export type ActivityCategory =
   | "Badminton"
   | "Tennis"
+  | "Table tennis"
+  | "Basketball"
+  | "Chess"
+  | "Board games"
+  | "Run club"
   | "Gym"
   | "Shopping"
   | "Hiking"
