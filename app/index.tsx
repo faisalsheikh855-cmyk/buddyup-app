@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, type Href } from "expo-router";
 import { useSessionStore } from "@/store/session-store";
 
 export default function Index() {
@@ -8,5 +8,5 @@ export default function Index() {
 
   if (!onboarded) return <Redirect href="/(public)/onboarding" />;
   if (!session && !previewMode) return <Redirect href="/(public)/auth" />;
-  return <Redirect href="/(app)/(tabs)" />;
+  return <Redirect href={"/(app)/(tabs)" as Href} />;
 }

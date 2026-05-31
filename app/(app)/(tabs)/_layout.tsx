@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
+import { useWindowDimensions } from "react-native";
 import { colors } from "@/theme/tokens";
 
 const icons = {
@@ -10,17 +12,41 @@ const icons = {
 };
 
 export default function TabsLayout() {
+  const { width } = useWindowDimensions();
+  const tabBarWidth = Math.min(width - 36, 430);
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: "#84918C",
-        tabBarStyle: { height: 82, paddingTop: 9, paddingBottom: 24, borderTopColor: colors.line },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarActiveTintColor: colors.white,
+        tabBarInactiveTintColor: "rgba(255,255,255,0.68)",
+        tabBarBackground: () => <BlurView intensity={55} tint="dark" style={{ flex: 1 }} />,
+        tabBarStyle: {
+          position: "absolute",
+          left: (width - tabBarWidth) / 2,
+          bottom: 18,
+          width: tabBarWidth,
+          height: 70,
+          paddingTop: 10,
+          paddingBottom: 12,
+          borderTopWidth: 1,
+          borderColor: "rgba(255,255,255,0.22)",
+          borderRadius: 35,
+          overflow: "hidden",
+          backgroundColor: "rgba(20,37,31,0.62)",
+        },
+        tabBarItemStyle: { borderRadius: 34, marginHorizontal: 3 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
         tabBarIcon: ({ color, focused, size }) => {
           const set = icons[route.name as keyof typeof icons];
-          return <Ionicons name={set ? set[focused ? 1 : 0] : "ellipse-outline"} color={color} size={size} />;
+          return (
+            <Ionicons
+              name={set ? set[focused ? 1 : 0] : "ellipse-outline"}
+              color={color}
+              size={focused ? size + 2 : size}
+            />
+          );
         },
       })}
     >
