@@ -31,7 +31,7 @@ export default function AuthScreen() {
       if (mode === "login") {
         const session = await signInMutation.mutateAsync({ email: email.trim(), password });
         setSession(session);
-        router.replace("/(app)/(tabs)");
+        router.replace("/");
         return;
       }
       const session = await signUpMutation.mutateAsync({ email: email.trim(), password });
@@ -41,7 +41,7 @@ export default function AuthScreen() {
         return;
       }
       setSession(session);
-      router.replace("/(app)/(tabs)");
+      router.replace("/");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Authentication failed. Try again.");
     }
@@ -109,7 +109,7 @@ export default function AuthScreen() {
                 variant="secondary"
                 onPress={() => {
                   startPreview();
-                  router.replace("/(app)/(tabs)");
+                  router.replace("/");
                 }}
               >
                 Preview the app

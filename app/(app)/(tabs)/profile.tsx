@@ -65,17 +65,17 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
         </View>
-        <View className="mb-5 rounded-app border border-line bg-white p-4">
-          <Text className="mb-2 text-[16px] font-bold text-ink">Find activities nearby</Text>
-          <Text className="mb-4 text-[13px] leading-5 text-muted">Your precise location is used only to calculate nearby plans.</Text>
+        <View className="mb-5 rounded-[22px] bg-ink p-5">
+          <Text className="mb-2 text-[18px] font-extrabold text-white">Find activities nearby</Text>
+          <Text className="mb-4 text-[13px] font-semibold leading-5 text-white/70">Your precise location is used only to calculate nearby plans.</Text>
           <Button variant={locationEnabled ? "secondary" : "primary"} onPress={enableNearby}>
             {locationEnabled ? "Location enabled" : "Enable location"}
           </Button>
         </View>
-        <View className="rounded-app border border-line bg-white p-4">
-          <Text className="text-[15px] font-bold text-ink">Interests</Text>
+        <View className="rounded-[22px] border border-line bg-white p-4">
+          <Text className="text-[16px] font-extrabold text-ink">Interests</Text>
           <View className="mt-3 flex-row flex-wrap gap-2">
-            {["Badminton", "Coffee", "Hiking", "Rec Room"].map((tag) => (
+            {["Tennis", "Chess", "Badminton", "Table tennis", "Coffee walks", "Basketball"].map((tag) => (
               <Text key={tag} className="rounded-full bg-brand-soft px-3 py-2 text-[12px] font-semibold text-brand">{tag}</Text>
             ))}
           </View>
