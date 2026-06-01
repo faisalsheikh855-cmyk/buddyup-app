@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { queryClient, subscribeToAppFocus } from "@/lib/query-client";
 import { supabase } from "@/lib/supabase";
+import { ensureProfile } from "@/features/profile/api";
 import { useSessionStore } from "@/store/session-store";
 import { colors } from "@/theme/tokens";
 import "../global.css";
@@ -57,6 +58,7 @@ export default function RootLayout() {
       .getSession()
       .then(({ data }) => {
         if (mounted) setSession(data.session);
+        if (data.session) void ensureProfile(data.session).catch(() => undefined);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -69,6 +71,7 @@ export default function RootLayout() {
         setSession(session);
         setAuthReady(true);
       }
+      if (session) void ensureProfile(session).catch(() => undefined);
     });
 
     const appState = AppState.addEventListener("change", (state) => {

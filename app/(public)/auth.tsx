@@ -25,6 +25,11 @@ export default function AuthScreen() {
   const startPreview = useSessionStore((state) => state.startPreview);
   const pending = signInMutation.isPending || signUpMutation.isPending;
 
+  function previewApp() {
+    startPreview();
+    router.replace("/");
+  }
+
   async function submit() {
     setNotice(null);
     try {
@@ -43,7 +48,12 @@ export default function AuthScreen() {
       setSession(session);
       router.replace("/");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Authentication failed. Try again.");
+      const message = error instanceof Error ? error.message : "Authentication failed. Try again.";
+      setNotice(
+        message.toLowerCase().includes("rate limit")
+          ? "Supabase is rate-limiting signup emails right now. Try logging in if you already have an account, or use Preview while the limit resets."
+          : message,
+      );
     }
   }
 
@@ -101,22 +111,16 @@ export default function AuthScreen() {
             <Text className="text-[13px] leading-5 text-[#A4483F]">{notice}</Text>
           </View>
         ) : null}
-        {!isSupabaseConfigured ? (
-          <View className="mt-5 rounded-app border border-line bg-white px-4 py-3">
-            <Text className="block w-full text-[13px] leading-5 text-muted">Add Expo Supabase environment keys to enable authentication.</Text>
-            <View className="mt-3">
-              <Button
-                variant="secondary"
-                onPress={() => {
-                  startPreview();
-                  router.replace("/");
-                }}
-              >
-                Preview the app
-              </Button>
-            </View>
+        <View className="mt-5 rounded-app border border-line bg-white px-4 py-3">
+          <Text className="block w-full text-[13px] leading-5 text-muted">
+            {isSupabaseConfigured
+              ? "Preview lets you explore the app while auth email limits reset. Live posting and requests still require login."
+              : "Add Expo Supabase environment keys to enable authentication."}
+          </Text>
+          <View className="mt-3">
+            <Button variant="secondary" onPress={previewApp}>Preview the app</Button>
           </View>
-        ) : null}
+        </View>
         <View className="mt-8">
           <Button loading={pending} disabled={!email.trim() || password.length < 6} onPress={submit}>
             {mode === "signup" ? "Create account" : "Log in"}
