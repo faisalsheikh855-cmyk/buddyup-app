@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -22,8 +22,13 @@ export default function AuthScreen() {
   const signInMutation = useSignIn();
   const signUpMutation = useSignUp();
   const setSession = useSessionStore((state) => state.setSession);
+  const session = useSessionStore((state) => state.session);
   const startPreview = useSessionStore((state) => state.startPreview);
   const pending = signInMutation.isPending || signUpMutation.isPending;
+
+  useEffect(() => {
+    if (session) router.replace("/");
+  }, [session]);
 
   function previewApp() {
     startPreview();

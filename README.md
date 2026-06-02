@@ -38,7 +38,7 @@ BuddyUp remains an iOS/Android Expo app, while its Expo web export deploys to Ne
 3. Keep the configuration from `netlify.toml`: build command `npm run build:web` and publish directory `dist`.
 4. Open **Project configuration** > **Environment variables** and add the Supabase public client variables listed below.
 5. Trigger a deploy. Netlify runs the Expo web export and serves the resulting static site.
-6. In Supabase authentication URL configuration, set the Site URL to the Netlify production URL, such as `https://your-site.netlify.app`, and add any custom production domain as an allowed redirect URL when used.
+6. In Supabase authentication URL configuration, set the Site URL to the Netlify production URL, such as `https://your-site.netlify.app`, and add redirect URLs for every deployed web origin that should receive email auth links.
 
 ### Netlify Environment Variables
 
@@ -53,11 +53,44 @@ Find both values in the Supabase project dashboard under project API settings. I
 
 Do not add a Supabase secret key or `service_role` key to this Expo web build. Variables prefixed with `EXPO_PUBLIC_` are intentionally embedded in the browser bundle, so database access must be protected by Row Level Security policies.
 
+The web build generates `public/env.js` from these Netlify variables before exporting the Expo static site. If a deploy preview still says Supabase keys are missing, confirm the variables are enabled for deploy previews as well as production.
+
+### Supabase Auth Redirects
+
+Email confirmation links return to `/auth` on the current web origin. In the Supabase dashboard, open **Authentication** > **URL Configuration** and add allowed redirect URLs for:
+
+- `https://your-site.netlify.app/auth`
+- Your custom production domain with `/auth`, when used
+- Deploy preview origins with `/auth`, when previews should support signup confirmation
+
+If Supabase sends users to `localhost`, the project Site URL is still set to a localhost value or the deployed `/auth` URL has not been added to the allow list.
+
 ### Route Handling
 
 Expo Router is configured with `web.output: "static"` and emits HTML pages for known routes during `npm run build:web`. Netlify directs the empty static root redirect page to `/onboarding`, which contains visible prerendered UI for first visits. The fallback rewrite uses `force = false`, so other generated pages and `_expo` assets are served normally. For an app URL not represented by a generated file, Netlify serves `/index.html` with status `200`, allowing Expo Router to handle the path after browser startup instead of returning a refresh-time 404.
 
 Native iOS and Android releases use Expo EAS builds and the Apple App Store / Google Play Store, rather than Netlify hosting.
+
+## GitHub Pages Deployment
+
+The Expo web export can be hosted from a `gh-pages` branch.
+
+For `faisalsheikh855-cmyk/buddyup-app`, the Pages URL is:
+
+```text
+https://faisalsheikh855-cmyk.github.io/buddyup-app/
+```
+
+### Setup
+
+1. Build with `EXPO_BASE_URL=/buddyup-app npm run build:web`.
+2. Copy `dist/index.html` to `dist/404.html`.
+3. Add an empty `dist/.nojekyll` file.
+4. Push the contents of `dist` to the `gh-pages` branch.
+5. In GitHub, open **Settings** > **Pages** and set **Source** to **Deploy from a branch**, branch `gh-pages`, folder `/`.
+6. In Supabase **Authentication** > **URL Configuration**, add `https://faisalsheikh855-cmyk.github.io/buddyup-app/auth` as an allowed redirect URL.
+
+The `EXPO_BASE_URL` value makes generated assets load under `/buddyup-app`. The `404.html` fallback lets direct links such as `/buddyup-app/auth` load the app, and `.nojekyll` ensures GitHub Pages serves Expo's generated assets normally.
 
 ## Supabase
 
