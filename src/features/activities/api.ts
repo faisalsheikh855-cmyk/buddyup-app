@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { getCurrentProfile } from "@/features/profile/api";
+import { getCurrentProfile, isProfileReady } from "@/features/profile/api";
 
 export type Activity = {
   id: string;
@@ -126,6 +126,9 @@ export async function createActivity(draft: ActivityDraft): Promise<Activity> {
   const client = requireClient();
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Sign in to create an activity.");
+  if (!isProfileReady(profile)) {
+    throw new Error("Complete your profile, add 5 recent photos, and verify your identity before creating an activity.");
+  }
 
   const { data, error } = await client
     .from("activities")
@@ -152,6 +155,9 @@ export async function requestToJoin(activityId: string, message = "I'd like to j
   const client = requireClient();
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Sign in to request to join.");
+  if (!isProfileReady(profile)) {
+    throw new Error("Complete your profile, add 5 recent photos, and verify your identity before requesting to join.");
+  }
 
   const { data, error } = await client
     .from("activity_requests")
