@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Profile } from "@/features/profile/api";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 type TrustBadgesProps = {
   profile?: Pick<
@@ -21,6 +21,7 @@ const badges = [
 ];
 
 export function TrustBadges({ profile, compact = false, showPlaceholder = true }: TrustBadgesProps) {
+  const colors = useThemeColors();
   const active = {
     email: Boolean(profile?.email_verified),
     phone: Boolean(profile?.phone_number?.trim()),
@@ -39,7 +40,7 @@ export function TrustBadges({ profile, compact = false, showPlaceholder = true }
             key={badge.key}
             className={`flex-row items-center rounded-full border ${
               compact ? "gap-1 px-2 py-1" : "gap-1.5 px-3 py-2"
-            } ${isActive ? "border-brand bg-brand-soft" : "border-line bg-white"}`}
+            } ${isActive ? "border-brand bg-brand-soft" : "border-line bg-surface"}`}
           >
             <Ionicons
               name={isActive ? "checkmark-circle" : badge.icon}

@@ -7,7 +7,7 @@ export default {
     version: "0.1.0",
     orientation: "portrait",
     scheme: "buddyup",
-    userInterfaceStyle: "light",
+    userInterfaceStyle: "automatic",
     newArchEnabled: true,
     web: {
       output: "static",

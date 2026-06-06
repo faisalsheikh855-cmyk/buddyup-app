@@ -13,7 +13,7 @@ import {
   useUpdateProfile,
   useUploadPrimaryProfilePhoto,
 } from "@/features/profile/hooks";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 type StepProps = {
   title: string;
@@ -25,8 +25,9 @@ type StepProps = {
 };
 
 function VerificationStep({ title, detail, complete, pending, icon, children }: StepProps) {
+  const colors = useThemeColors();
   return (
-    <View className="rounded-app border border-line bg-white p-4">
+    <View className="rounded-app border border-line bg-surface p-4">
       <View className="flex-row items-start">
         <View className={`h-11 w-11 items-center justify-center rounded-full ${complete ? "bg-brand-soft" : "bg-canvas"}`}>
           <Ionicons
@@ -49,6 +50,7 @@ function VerificationStep({ title, detail, complete, pending, icon, children }: 
 }
 
 export default function VerificationScreen() {
+  const colors = useThemeColors();
   const profileQuery = useCurrentProfile();
   const updateProfile = useUpdateProfile();
   const uploadPhoto = useUploadPrimaryProfilePhoto();
@@ -159,7 +161,7 @@ export default function VerificationScreen() {
   return (
     <Screen scroll keyboard>
       <View className="pb-16 pt-3">
-        <Pressable className="mb-6 h-11 w-11 items-center justify-center rounded-full bg-white" onPress={() => router.back()}>
+        <Pressable className="mb-6 h-11 w-11 items-center justify-center rounded-full bg-surface" onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={23} color={colors.ink} />
         </Pressable>
 

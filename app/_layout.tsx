@@ -9,15 +9,16 @@ import { queryClient, subscribeToAppFocus } from "@/lib/query-client";
 import { supabase } from "@/lib/supabase";
 import { ensureProfile } from "@/features/profile/api";
 import { useSessionStore } from "@/store/session-store";
-import { colors } from "@/theme/tokens";
+import { ThemeProvider, useTheme } from "@/theme/tokens";
 import "../global.css";
 
-export default function RootLayout() {
+function RootNavigator() {
   const storageReady = useSessionStore((state) => state.storageReady);
   const authReady = useSessionStore((state) => state.authReady);
   const setSession = useSessionStore((state) => state.setSession);
   const setAuthReady = useSessionStore((state) => state.setAuthReady);
   const setStorageReady = useSessionStore((state) => state.setStorageReady);
+  const { colors, resolvedTheme } = useTheme();
   const ready = Platform.OS === "web" || (storageReady && authReady);
 
   useEffect(() => subscribeToAppFocus(), []);
@@ -102,9 +103,17 @@ export default function RootLayout() {
               <Stack.Screen name="(app)" />
             </Stack>
           )}
-          <StatusBar style="dark" />
+          <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNavigator />
+    </ThemeProvider>
   );
 }

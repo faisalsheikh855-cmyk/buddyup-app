@@ -7,7 +7,7 @@ import type { SharedValue } from "react-native-reanimated";
 import { Button } from "@/components/ui/button";
 import { onboardingSlides, OnboardingSlide } from "@/features/onboarding/slides";
 import { useSessionStore } from "@/store/session-store";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 const AnimatedList = Animated.createAnimatedComponent(FlatList<OnboardingSlide>);
 
@@ -36,7 +36,7 @@ function Slide({ item, width }: { item: OnboardingSlide; width?: number }) {
           </View>
           <View className="flex-row flex-wrap gap-2 p-4">
             {item.activityTags.map((tag) => (
-              <View key={tag} className="rounded-full bg-white px-3 py-2">
+              <View key={tag} className="rounded-full bg-surface px-3 py-2">
                 <Text className="text-[12px] font-semibold text-ink">{tag}</Text>
               </View>
             ))}
@@ -53,6 +53,7 @@ function Slide({ item, width }: { item: OnboardingSlide; width?: number }) {
 }
 
 export default function OnboardingScreen() {
+  const colors = useThemeColors();
   const { width } = useWindowDimensions();
   const webFrameWidth = Math.min(width || 390, 480);
   const listRef = useRef<FlatList<OnboardingSlide>>(null);

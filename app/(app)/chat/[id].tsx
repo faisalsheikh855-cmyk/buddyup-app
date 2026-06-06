@@ -5,7 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useConversation, useMessages, useSendMessage } from "@/features/chat/hooks";
 import { useSessionStore } from "@/store/session-store";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 const previewMessages = [
   { id: "1", body: "Hey! Still good for badminton tonight?", mine: false },
@@ -18,6 +18,7 @@ export function generateStaticParams() {
 }
 
 export default function ChatScreen() {
+  const colors = useThemeColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [message, setMessage] = useState("");
   const [localPreviewMessages, setLocalPreviewMessages] = useState(previewMessages);
@@ -43,7 +44,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-surface">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View className="h-16 flex-row items-center gap-4 border-b border-line px-5">
           <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={colors.ink} /></Pressable>
@@ -71,19 +72,19 @@ export default function ChatScreen() {
 
         <View className="flex-1 gap-3 px-5 pt-4">
           {messages.length === 0 ? (
-            <View className="rounded-[20px] bg-[#F3F5F3] p-4">
+            <View className="rounded-[20px] bg-canvas p-4">
               <Text className="text-center text-[14px] font-semibold text-muted">No messages yet. Say hello and confirm the plan.</Text>
             </View>
           ) : null}
           {messages.map((item) => (
-            <View key={item.id} className={`max-w-[82%] rounded-app px-4 py-3 ${item.mine ? "self-end bg-brand" : "self-start bg-[#EDF1EE]"}`}>
+            <View key={item.id} className={`max-w-[82%] rounded-app px-4 py-3 ${item.mine ? "self-end bg-brand" : "self-start bg-line"}`}>
               <Text className={`text-[15px] leading-5 ${item.mine ? "text-white" : "text-ink"}`}>{item.body}</Text>
             </View>
           ))}
         </View>
         <View className="flex-row items-center gap-3 border-t border-line px-4 py-3">
           <TextInput
-            className="h-[48px] flex-1 rounded-full bg-[#F3F5F3] px-5 text-[15px] text-ink"
+            className="h-[48px] flex-1 rounded-full bg-canvas px-5 text-[15px] text-ink"
             value={message}
             onChangeText={setMessage}
             placeholder="Message"

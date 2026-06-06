@@ -9,13 +9,14 @@ import { isProfileVerified } from "@/features/profile/api";
 import { useCurrentProfile } from "@/features/profile/hooks";
 import { nearbyActivities } from "@/features/activities/mock-data";
 import { useBlockUser, useReportUser, useSafetyCheckin } from "@/features/safety/hooks";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 export function generateStaticParams() {
   return nearbyActivities.map((activity) => ({ id: activity.id }));
 }
 
 export default function ActivityDetailScreen() {
+  const colors = useThemeColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const activityQuery = useActivity(id);
   const joinMutation = useRequestToJoin();
@@ -98,12 +99,12 @@ export default function ActivityDetailScreen() {
   return (
     <Screen scroll>
       <View className="pb-6 pt-3">
-        <Pressable className="mb-8 h-11 w-11 items-center justify-center rounded-full bg-white" onPress={() => router.back()}>
+        <Pressable className="mb-8 h-11 w-11 items-center justify-center rounded-full bg-surface" onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={23} color={colors.ink} />
         </Pressable>
 
         {activityQuery.isLoading ? (
-          <View className="items-center rounded-[22px] border border-line bg-white p-8">
+          <View className="items-center rounded-[22px] border border-line bg-surface p-8">
             <ActivityIndicator color={colors.brand} />
             <Text className="mt-3 text-[14px] font-semibold text-muted">Loading activity...</Text>
           </View>
@@ -130,13 +131,13 @@ export default function ActivityDetailScreen() {
               </View>
             </View>
 
-            <View className="mb-5 rounded-[22px] border border-line bg-white p-4">
+            <View className="mb-5 rounded-[22px] border border-line bg-surface p-4">
               <Text className="text-[15px] font-extrabold text-ink">Host</Text>
               <Text className="mt-1 text-[14px] font-semibold text-muted">{activity.host?.name ?? "BuddyUp host"} · {activity.host?.neighborhood ?? "Nearby"}</Text>
               {activity.host ? <View className="mt-3"><TrustBadges profile={activity.host} compact /></View> : null}
             </View>
 
-            <View className="mb-8 rounded-[22px] border border-line bg-white p-4">
+            <View className="mb-8 rounded-[22px] border border-line bg-surface p-4">
               <Text className="text-[15px] font-extrabold text-ink">What to know</Text>
               <Text className="mt-2 text-[14px] leading-6 text-muted">{activity.description}</Text>
             </View>
@@ -156,22 +157,22 @@ export default function ActivityDetailScreen() {
             <View className="mb-5">
               <Text className="mb-3 text-[15px] font-extrabold text-ink">Safety tools</Text>
               <View className="flex-row flex-wrap gap-2">
-                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-white px-3 py-3" onPress={sharePlan}>
+                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={sharePlan}>
                   <Ionicons name="share-outline" size={17} color={colors.brand} />
                   <Text className="text-[12px] font-bold text-ink">Share plan</Text>
                 </Pressable>
-                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-white px-3 py-3" onPress={reportHost}>
+                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={reportHost}>
                   <Ionicons name="flag-outline" size={17} color={colors.coral} />
                   <Text className="text-[12px] font-bold text-ink">Report user</Text>
                 </Pressable>
-                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-white px-3 py-3" onPress={blockHost}>
+                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={blockHost}>
                   <Ionicons name="ban-outline" size={17} color={colors.coral} />
                   <Text className="text-[12px] font-bold text-ink">Block user</Text>
                 </Pressable>
               </View>
             </View>
 
-            <View className="mb-8 rounded-app border border-line bg-white p-4">
+            <View className="mb-8 rounded-app border border-line bg-surface p-4">
               <Text className="text-[15px] font-extrabold text-ink">Post-activity check-in</Text>
               <Text className="mt-1 text-[12px] leading-5 text-muted">After the activity, let BuddyUp know whether you are safe.</Text>
               <View className="mt-4 flex-row gap-3">

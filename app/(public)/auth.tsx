@@ -9,11 +9,12 @@ import { Screen } from "@/components/ui/screen";
 import { useSignIn, useSignUp } from "@/features/auth/hooks";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useSessionStore } from "@/store/session-store";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 type AuthMode = "signup" | "login";
 
 export default function AuthScreen() {
+  const colors = useThemeColors();
   const [mode, setMode] = useState<AuthMode>("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -65,7 +66,7 @@ export default function AuthScreen() {
   return (
     <Screen scroll keyboard>
       <View className="pt-3">
-        <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-white" onPress={() => router.replace("/(public)/onboarding")}>
+        <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-surface" onPress={() => router.replace("/(public)/onboarding")}>
           <Ionicons name="chevron-back" size={23} color={colors.ink} />
         </Pressable>
       </View>
@@ -77,9 +78,9 @@ export default function AuthScreen() {
         <Text className="block w-full mb-8 text-[15px] leading-6 text-muted">
           {mode === "signup" ? "Connect through plans, sports and spontaneous hangs." : "Your next plan is one tap away."}
         </Text>
-        <View className="mb-7 h-[52px] flex-row rounded-app bg-[#ECF0ED] p-1">
+        <View className="mb-7 h-[52px] flex-row rounded-app bg-line p-1">
           {(["signup", "login"] as AuthMode[]).map((item) => (
-            <Pressable key={item} className={`flex-1 items-center justify-center rounded-md ${mode === item ? "bg-white" : ""}`} onPress={() => { setMode(item); setNotice(null); }}>
+            <Pressable key={item} className={`flex-1 items-center justify-center rounded-md ${mode === item ? "bg-surface" : ""}`} onPress={() => { setMode(item); setNotice(null); }}>
               <Text className={`text-[14px] font-bold ${mode === item ? "text-ink" : "text-muted"}`}>
                 {item === "signup" ? "Sign up" : "Log in"}
               </Text>
@@ -116,7 +117,7 @@ export default function AuthScreen() {
             <Text className="text-[13px] leading-5 text-[#A4483F]">{notice}</Text>
           </View>
         ) : null}
-        <View className="mt-5 rounded-app border border-line bg-white px-4 py-3">
+        <View className="mt-5 rounded-app border border-line bg-surface px-4 py-3">
           <Text className="block w-full text-[13px] leading-5 text-muted">
             {isSupabaseConfigured
               ? "Preview lets you explore the app while auth email limits reset. Live posting and requests still require login."

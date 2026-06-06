@@ -8,7 +8,7 @@ import { useActivities, useRequestToJoin } from "@/features/activities/hooks";
 import type { Activity } from "@/features/activities/api";
 import { isProfileVerified } from "@/features/profile/api";
 import { useCurrentProfile } from "@/features/profile/hooks";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 type Category = {
   title: string;
@@ -207,8 +207,9 @@ function planFromActivity(activity: Activity): Plan {
 }
 
 function SearchBox() {
+  const colors = useThemeColors();
   return (
-    <View className="mb-4 flex-row items-center rounded-[18px] border border-line bg-white px-4 py-3 shadow-sm">
+    <View className="mb-4 flex-row items-center rounded-[18px] border border-line bg-surface px-4 py-3 shadow-sm">
       <Ionicons name="search" size={19} color={colors.muted} />
       <TextInput
         className="ml-3 min-w-0 flex-1 text-[15px] font-semibold text-ink"
@@ -228,7 +229,7 @@ function FilterBar() {
       {filters.map((filter, index) => (
         <Pressable
           key={filter}
-          className={`rounded-full px-4 py-2.5 ${index === 0 ? "bg-ink" : "border border-line bg-white"}`}
+          className={`rounded-full px-4 py-2.5 ${index === 0 ? "bg-ink" : "border border-line bg-surface"}`}
         >
           <Text className={`text-[13px] font-extrabold ${index === 0 ? "text-white" : "text-ink"}`}>{filter}</Text>
         </Pressable>
@@ -282,7 +283,7 @@ function FeaturedPlan({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => vo
           </View>
         </View>
       </ImageBackground>
-      <View className="flex-row items-center justify-between bg-white px-4 py-4">
+      <View className="flex-row items-center justify-between bg-surface px-4 py-4">
         <View className="min-w-0 flex-1 pr-3">
           <Text className="text-[13px] font-extrabold text-ink">{plan.host}</Text>
           <Text className="mt-0.5 text-[12px] font-semibold text-muted">{plan.trust}</Text>
@@ -295,6 +296,7 @@ function FeaturedPlan({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => vo
 }
 
 function CategoryCard({ category, width }: { category: Category; width: number }) {
+  const colors = useThemeColors();
   return (
     <Pressable className="overflow-hidden rounded-[20px] bg-ink active:opacity-90" style={{ width, height: 136 }}>
       <ImageBackground source={{ uri: category.image }} resizeMode="cover" className="h-full w-full">
@@ -316,7 +318,7 @@ function CategoryCard({ category, width }: { category: Category; width: number }
 
 function PlanCard({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => void }) {
   return (
-    <Pressable className="flex-row gap-3 rounded-[22px] border border-line bg-white p-3 active:bg-brand-soft" onPress={() => router.push(`/(app)/activities/${plan.id}`)}>
+    <Pressable className="flex-row gap-3 rounded-[22px] border border-line bg-surface p-3 active:bg-brand-soft" onPress={() => router.push(`/(app)/activities/${plan.id}`)}>
       <ImageBackground source={{ uri: plan.image }} resizeMode="cover" className="h-[96px] w-[96px] overflow-hidden rounded-[18px]">
         <View className="absolute inset-0" style={{ backgroundColor: plan.tint }} />
         <View className="absolute bottom-2 left-2 rounded-full bg-black/35 px-2 py-1">
@@ -352,8 +354,9 @@ function SectionHeader({ title, action }: { title: string; action?: string }) {
 }
 
 function EmptyHint() {
+  const colors = useThemeColors();
   return (
-    <View className="mt-6 rounded-[22px] border border-line bg-white p-4">
+    <View className="mt-6 rounded-[22px] border border-line bg-surface p-4">
       <View className="mb-3 h-10 w-10 items-center justify-center rounded-full bg-coral-soft">
         <Ionicons name="sparkles-outline" size={19} color={colors.coral} />
       </View>
@@ -364,6 +367,7 @@ function EmptyHint() {
 }
 
 export default function FeedScreen() {
+  const colors = useThemeColors();
   const { width: viewportWidth } = useWindowDimensions();
   const activitiesQuery = useActivities();
   const joinMutation = useRequestToJoin();
@@ -398,7 +402,7 @@ export default function FeedScreen() {
               <Text className="mt-1 text-[15px] font-semibold text-muted">Find games, clubs, and activity buddies nearby</Text>
             </View>
             <Pressable
-              className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm active:bg-brand-soft"
+              className="h-12 w-12 items-center justify-center rounded-full bg-surface shadow-sm active:bg-brand-soft"
               onPress={() => router.push("/(app)/notifications")}
             >
               <Ionicons name="notifications-outline" size={22} color={colors.ink} />
@@ -409,7 +413,7 @@ export default function FeedScreen() {
           <FilterBar />
 
           {activitiesQuery.isLoading ? (
-            <View className="mb-3 rounded-[20px] border border-line bg-white p-4">
+            <View className="mb-3 rounded-[20px] border border-line bg-surface p-4">
               <ActivityIndicator color={colors.brand} />
               <Text className="mt-2 text-center text-[13px] font-semibold text-muted">Loading nearby activities...</Text>
             </View>

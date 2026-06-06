@@ -1,5 +1,5 @@
 import { ActivityIndicator, Pressable, PressableProps, Text, View } from "react-native";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 type ButtonProps = PressableProps & {
   children: string;
@@ -10,7 +10,7 @@ type ButtonProps = PressableProps & {
 
 const variants = {
   primary: "bg-brand",
-  secondary: "bg-white border border-line",
+  secondary: "bg-surface border border-line",
   ghost: "bg-transparent",
 };
 
@@ -21,6 +21,7 @@ const labels = {
 };
 
 export function Button({ children, variant = "primary", loading, disabled, icon, className, ...props }: ButtonProps) {
+  const colors = useThemeColors();
   return (
     <Pressable
       accessibilityRole="button"

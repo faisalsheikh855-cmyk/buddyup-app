@@ -11,7 +11,7 @@ export const Field = forwardRef<TextInput, FieldProps>(function Field({ label, i
   return (
     <View className="gap-2">
       <Text className="text-[13px] font-semibold text-ink">{label}</Text>
-      <View className="h-[54px] flex-row items-center rounded-app border border-line bg-white px-4 focus:border-brand">
+      <View className="h-[54px] flex-row items-center rounded-app border border-line bg-surface px-4 focus:border-brand">
         {icon ? <View className="mr-3">{icon}</View> : null}
         <TextInput
           ref={ref}

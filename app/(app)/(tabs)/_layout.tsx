@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { useWindowDimensions } from "react-native";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 const icons = {
   index: ["compass-outline", "compass"] as const,
@@ -12,6 +12,7 @@ const icons = {
 };
 
 export default function TabsLayout() {
+  const colors = useThemeColors();
   const { width } = useWindowDimensions();
   const tabBarWidth = Math.min(width - 36, 430);
 

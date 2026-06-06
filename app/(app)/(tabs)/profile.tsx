@@ -29,7 +29,7 @@ import {
   useUpdateProfile,
   useUploadProfilePhotos,
 } from "@/features/profile/hooks";
-import { colors } from "@/theme/tokens";
+import { useThemeColors } from "@/theme/tokens";
 
 const interestOptions = [
   "Tennis",
@@ -42,36 +42,38 @@ const interestOptions = [
   "Gym",
 ];
 
-const verificationCopy: Record<VerificationStatus, { label: string; detail: string; icon: keyof typeof Ionicons.glyphMap; color: string; background: string }> = {
-  unverified: {
-    label: "Profile not verified",
-    detail: "Complete email, phone, photo, and selfie checks to unlock trust actions.",
-    icon: "shield-outline",
-    color: "#A4483F",
-    background: colors.coralSoft,
-  },
-  pending: {
-    label: "Verification in review",
-    detail: "Your private submission is waiting for review.",
-    icon: "time-outline",
-    color: "#7A5A18",
-    background: "#FFF5D8",
-  },
-  verified: {
-    label: "Identity verified",
-    detail: "Your identity check has been approved.",
-    icon: "shield-checkmark",
-    color: colors.brand,
-    background: colors.brandSoft,
-  },
-  rejected: {
-    label: "Verification needs attention",
-    detail: "Submit clear, current document and selfie images again.",
-    icon: "alert-circle-outline",
-    color: "#A4483F",
-    background: colors.coralSoft,
-  },
-};
+function getVerificationCopy(colors: ReturnType<typeof useThemeColors>): Record<VerificationStatus, { label: string; detail: string; icon: keyof typeof Ionicons.glyphMap; color: string; background: string }> {
+  return {
+    unverified: {
+      label: "Profile not verified",
+      detail: "Complete email, phone, photo, and selfie checks to unlock trust actions.",
+      icon: "shield-outline",
+      color: colors.coral,
+      background: colors.coralSoft,
+    },
+    pending: {
+      label: "Verification in review",
+      detail: "Your private submission is waiting for review.",
+      icon: "time-outline",
+      color: colors.muted,
+      background: colors.brandSoft,
+    },
+    verified: {
+      label: "Identity verified",
+      detail: "Your identity check has been approved.",
+      icon: "shield-checkmark",
+      color: colors.brand,
+      background: colors.brandSoft,
+    },
+    rejected: {
+      label: "Verification needs attention",
+      detail: "Submit clear, current document and selfie images again.",
+      icon: "alert-circle-outline",
+      color: colors.coral,
+      background: colors.coralSoft,
+    },
+  };
+}
 
 function PhotoTile({
   uri,
@@ -82,9 +84,10 @@ function PhotoTile({
   index: number;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
   return (
     <Pressable
-      className="aspect-square w-[48.5%] items-center justify-center overflow-hidden rounded-app border border-line bg-white"
+      className="aspect-square w-[48.5%] items-center justify-center overflow-hidden rounded-app border border-line bg-surface"
       onPress={onPress}
     >
       {uri ? (
@@ -119,8 +122,9 @@ function VerificationAsset({
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
 }) {
+  const colors = useThemeColors();
   return (
-    <Pressable className="min-h-[76px] flex-row items-center rounded-app border border-line bg-white px-4 py-3" onPress={onPress}>
+    <Pressable className="min-h-[76px] flex-row items-center rounded-app border border-line bg-surface px-4 py-3" onPress={onPress}>
       <View className={`h-11 w-11 items-center justify-center rounded-full ${uri ? "bg-brand-soft" : "bg-canvas"}`}>
         <Ionicons name={uri ? "checkmark" : icon} size={21} color={colors.brand} />
       </View>
@@ -134,6 +138,7 @@ function VerificationAsset({
 }
 
 export default function ProfileScreen() {
+  const colors = useThemeColors();
   const profileQuery = useCurrentProfile();
   const updateProfile = useUpdateProfile();
   const uploadPhotos = useUploadProfilePhotos();
@@ -166,7 +171,7 @@ export default function ProfileScreen() {
     setInterests(profile.interests ?? []);
   }, [profile]);
 
-  const verification = verificationCopy[profile?.verification_status ?? "unverified"];
+  const verification = getVerificationCopy(colors)[profile?.verification_status ?? "unverified"];
   const completionItems = useMemo(() => [
     photos.length >= 5,
     Boolean(name.trim() && bio.trim() && neighborhood.trim()),
@@ -332,7 +337,7 @@ export default function ProfileScreen() {
             title="Your profile"
             subtitle="Build trust before you meet"
             action={(
-              <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-white" onPress={() => router.push("/(app)/settings")}>
+              <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-surface" onPress={() => router.push("/(app)/settings")}>
                 <Ionicons name="settings-outline" size={21} color={colors.ink} />
               </Pressable>
             )}
@@ -374,11 +379,11 @@ export default function ProfileScreen() {
               ))}
             </View>
             <View className="mt-4 flex-row gap-3">
-              <Pressable className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-app border border-line bg-white" onPress={chooseProfilePhotos}>
+              <Pressable className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-app border border-line bg-surface" onPress={chooseProfilePhotos}>
                 <Ionicons name="images-outline" size={18} color={colors.brand} />
                 <Text className="text-[13px] font-bold text-brand">Choose photos</Text>
               </Pressable>
-              <Pressable className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-app border border-line bg-white" onPress={takeProfilePhoto}>
+              <Pressable className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-app border border-line bg-surface" onPress={takeProfilePhoto}>
                 <Ionicons name="camera-outline" size={18} color={colors.brand} />
                 <Text className="text-[13px] font-bold text-brand">Take photo</Text>
               </Pressable>
@@ -400,7 +405,7 @@ export default function ProfileScreen() {
             <Text className="mb-4 text-[20px] font-extrabold text-ink">Trust and safety</Text>
             <View className="rounded-app p-4" style={{ backgroundColor: verification.background }}>
               <View className="flex-row items-start">
-                <View className="h-11 w-11 items-center justify-center rounded-full bg-white">
+                <View className="h-11 w-11 items-center justify-center rounded-full bg-surface">
                   <Ionicons name={verification.icon} size={23} color={verification.color} />
                 </View>
                 <View className="ml-3 min-w-0 flex-1">
@@ -421,22 +426,22 @@ export default function ProfileScreen() {
             <View className="gap-4">
               <View>
                 <Text className="mb-2 text-[12px] font-bold text-ink">Display name</Text>
-                <TextInput className="h-[52px] rounded-app border border-line bg-white px-4 text-[15px] text-ink" value={name} onChangeText={setName} placeholder="Your name" />
+                <TextInput className="h-[52px] rounded-app border border-line bg-surface px-4 text-[15px] text-ink" value={name} onChangeText={setName} placeholder="Your name" />
               </View>
               <View className="flex-row gap-3">
                 <View className="flex-1">
                   <Text className="mb-2 text-[12px] font-bold text-ink">Age</Text>
-                  <TextInput className="h-[52px] rounded-app border border-line bg-white px-4 text-[15px] text-ink" value={age} onChangeText={setAge} keyboardType="number-pad" />
+                  <TextInput className="h-[52px] rounded-app border border-line bg-surface px-4 text-[15px] text-ink" value={age} onChangeText={setAge} keyboardType="number-pad" />
                 </View>
                 <View className="flex-[2]">
                   <Text className="mb-2 text-[12px] font-bold text-ink">Area</Text>
-                  <TextInput className="h-[52px] rounded-app border border-line bg-white px-4 text-[15px] text-ink" value={neighborhood} onChangeText={setNeighborhood} placeholder="Neighborhood" />
+                  <TextInput className="h-[52px] rounded-app border border-line bg-surface px-4 text-[15px] text-ink" value={neighborhood} onChangeText={setNeighborhood} placeholder="Neighborhood" />
                 </View>
               </View>
               <View>
                 <Text className="mb-2 text-[12px] font-bold text-ink">About me</Text>
                 <TextInput
-                  className="min-h-[108px] rounded-app border border-line bg-white px-4 py-3 text-[15px] leading-5 text-ink"
+                  className="min-h-[108px] rounded-app border border-line bg-surface px-4 py-3 text-[15px] leading-5 text-ink"
                   value={bio}
                   onChangeText={setBio}
                   multiline
@@ -448,7 +453,7 @@ export default function ProfileScreen() {
               </View>
               <View>
                 <Text className="mb-2 text-[12px] font-bold text-ink">Usually available</Text>
-                <TextInput className="h-[52px] rounded-app border border-line bg-white px-4 text-[15px] text-ink" value={availability} onChangeText={setAvailability} placeholder="Weeknights and weekends" />
+                <TextInput className="h-[52px] rounded-app border border-line bg-surface px-4 text-[15px] text-ink" value={availability} onChangeText={setAvailability} placeholder="Weeknights and weekends" />
               </View>
             </View>
           </View>
@@ -464,7 +469,7 @@ export default function ProfileScreen() {
                 return (
                   <Pressable
                     key={interest}
-                    className={`rounded-full border px-3 py-2 ${selected ? "border-brand bg-brand-soft" : "border-line bg-white"}`}
+                    className={`rounded-full border px-3 py-2 ${selected ? "border-brand bg-brand-soft" : "border-line bg-surface"}`}
                     onPress={() => toggleInterest(interest)}
                   >
                     <Text className={`text-[12px] font-semibold ${selected ? "text-brand" : "text-muted"}`}>{interest}</Text>
@@ -500,7 +505,7 @@ export default function ProfileScreen() {
               <Text className="text-[20px] font-extrabold text-ink">Verify your identity</Text>
               <Text className="mt-1 text-[12px] text-muted">Private documents are never shown on your profile.</Text>
             </View>
-            <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-white" onPress={() => setVerificationOpen(false)}>
+            <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-surface" onPress={() => setVerificationOpen(false)}>
               <Ionicons name="close" size={22} color={colors.ink} />
             </Pressable>
           </View>
@@ -512,7 +517,7 @@ export default function ProfileScreen() {
                 ["passport", "Passport"],
                 ["national_id", "National ID"],
               ] as const).map(([value, label]) => (
-                <Pressable key={value} className={`min-h-[44px] flex-1 items-center justify-center rounded-md px-1 ${documentType === value ? "bg-white" : ""}`} onPress={() => setDocumentType(value)}>
+                <Pressable key={value} className={`min-h-[44px] flex-1 items-center justify-center rounded-md px-1 ${documentType === value ? "bg-surface" : ""}`} onPress={() => setDocumentType(value)}>
                   <Text className={`text-center text-[11px] font-bold ${documentType === value ? "text-ink" : "text-muted"}`}>{label}</Text>
                 </Pressable>
               ))}

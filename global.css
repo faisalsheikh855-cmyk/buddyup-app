@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --color-canvas: 247 248 245;
+  --color-surface: 255 255 255;
+  --color-ink: 20 37 31;
+  --color-muted: 100 116 109;
+  --color-line: 228 232 228;
+  --color-brand: 8 127 99;
+  --color-brand-dark: 5 99 76;
+  --color-brand-soft: 226 244 236;
+  --color-coral: 240 91 79;
+  --color-coral-soft: 255 239 236;
+}

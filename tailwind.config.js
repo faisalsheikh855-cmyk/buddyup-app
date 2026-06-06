@@ -5,15 +5,16 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        canvas: "#F7F8F5",
-        ink: "#14251F",
-        muted: "#64746D",
-        brand: "#087F63",
-        "brand-dark": "#05634C",
-        "brand-soft": "#E2F4EC",
-        coral: "#F05B4F",
-        "coral-soft": "#FFEFEC",
-        line: "#E4E8E4"
+        canvas: "rgb(var(--color-canvas) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        brand: "rgb(var(--color-brand) / <alpha-value>)",
+        "brand-dark": "rgb(var(--color-brand-dark) / <alpha-value>)",
+        "brand-soft": "rgb(var(--color-brand-soft) / <alpha-value>)",
+        coral: "rgb(var(--color-coral) / <alpha-value>)",
+        "coral-soft": "rgb(var(--color-coral-soft) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)"
       },
       borderRadius: {
         app: "8px"
