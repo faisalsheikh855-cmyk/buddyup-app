@@ -13,10 +13,11 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Header } from "@/components/ui/header";
 import { Screen } from "@/components/ui/screen";
+import { TrustBadges } from "@/components/trust-badges";
 import {
   type DocumentType,
   type IdentitySubmission,
@@ -42,9 +43,9 @@ const interestOptions = [
 ];
 
 const verificationCopy: Record<VerificationStatus, { label: string; detail: string; icon: keyof typeof Ionicons.glyphMap; color: string; background: string }> = {
-  not_started: {
-    label: "Identity not verified",
-    detail: "Verify a government ID and live selfie to build trust.",
+  unverified: {
+    label: "Profile not verified",
+    detail: "Complete email, phone, photo, and selfie checks to unlock trust actions.",
     icon: "shield-outline",
     color: "#A4483F",
     background: colors.coralSoft,
@@ -165,7 +166,7 @@ export default function ProfileScreen() {
     setInterests(profile.interests ?? []);
   }, [profile]);
 
-  const verification = verificationCopy[profile?.verification_status ?? "not_started"];
+  const verification = verificationCopy[profile?.verification_status ?? "unverified"];
   const completionItems = useMemo(() => [
     photos.length >= 5,
     Boolean(name.trim() && bio.trim() && neighborhood.trim()),
@@ -293,6 +294,7 @@ export default function ProfileScreen() {
         interests,
         availability: availability.trim() || "Flexible",
         radius_km: profile?.radius_km ?? 8,
+        phone_number: profile?.phone_number ?? null,
       });
       Alert.alert("Profile saved", "Your profile details are up to date.");
     } catch (error) {
@@ -349,6 +351,9 @@ export default function ProfileScreen() {
             <View className="mt-3 h-2 overflow-hidden rounded-full bg-line">
               <View className="h-full rounded-full bg-brand" style={{ width: `${completion}%` }} />
             </View>
+            <View className="mt-4">
+              <TrustBadges profile={profile} />
+            </View>
           </View>
 
           <View className="mb-8">
@@ -404,8 +409,8 @@ export default function ProfileScreen() {
                 </View>
               </View>
               {profile?.verification_status !== "verified" && profile?.verification_status !== "pending" ? (
-                <Pressable className="mt-4 h-12 items-center justify-center rounded-app bg-ink" onPress={() => setVerificationOpen(true)}>
-                  <Text className="text-[14px] font-bold text-white">Verify government ID</Text>
+                <Pressable className="mt-4 h-12 items-center justify-center rounded-app bg-ink" onPress={() => router.push("/verification" as Href)}>
+                  <Text className="text-[14px] font-bold text-white">Open verification checklist</Text>
                 </Pressable>
               ) : null}
             </View>

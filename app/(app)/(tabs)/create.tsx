@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { Header } from "@/components/ui/header";
 import { Button } from "@/components/ui/button";
 import { Screen } from "@/components/ui/screen";
 import { useCreateActivity } from "@/features/activities/hooks";
+import { isProfileVerified } from "@/features/profile/api";
+import { useCurrentProfile } from "@/features/profile/hooks";
 import { colors } from "@/theme/tokens";
 
 const activities = ["Tennis", "Badminton", "Chess", "Table tennis", "Basketball", "Run club"];
@@ -22,7 +24,14 @@ export default function CreateActivityScreen() {
   const [spots, setSpots] = useState("4");
   const [description, setDescription] = useState("");
   const createMutation = useCreateActivity();
+  const profileQuery = useCurrentProfile();
   const canPost = title.trim() && location.trim() && startsAt.trim() && Number(spots) > 0;
+
+  useEffect(() => {
+    if (!profileQuery.isLoading && !isProfileVerified(profileQuery.data)) {
+      router.replace("/verification" as Href);
+    }
+  }, [profileQuery.data, profileQuery.isLoading]);
 
   function postActivity() {
     if (!canPost) return;
@@ -45,6 +54,19 @@ export default function CreateActivityScreen() {
           router.push(`/(app)/activities/${created.id}`);
         },
       },
+    );
+  }
+
+  if (profileQuery.isLoading || !isProfileVerified(profileQuery.data)) {
+    return (
+      <Screen>
+        <View className="flex-1 items-center justify-center px-5">
+          <ActivityIndicator color={colors.brand} />
+          <Text className="mt-4 text-center text-[14px] leading-6 text-muted">
+            To keep BuddyUp safe, only verified members can create activities or send join requests.
+          </Text>
+        </View>
+      </Screen>
     );
   }
 

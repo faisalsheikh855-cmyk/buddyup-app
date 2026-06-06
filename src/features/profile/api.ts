@@ -1,7 +1,8 @@
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-export type VerificationStatus = "not_started" | "pending" | "verified" | "rejected";
+export type VerificationStatus = "unverified" | "pending" | "verified" | "rejected";
+export type SelfieVerificationStatus = "not_started" | "pending" | "approved" | "rejected";
 export type DocumentType = "drivers_license" | "passport" | "national_id";
 
 export type Profile = {
@@ -15,6 +16,10 @@ export type Profile = {
   radius_km: number;
   avatar: string | null;
   photo_urls: string[];
+  email_verified: boolean;
+  phone_number: string | null;
+  phone_verified: boolean;
+  selfie_verification_status: SelfieVerificationStatus;
   verification_status: VerificationStatus;
   verification_submitted_at: string | null;
   created_at: string;
@@ -22,7 +27,7 @@ export type Profile = {
 
 export type ProfileUpdate = Pick<
   Profile,
-  "name" | "age" | "neighborhood" | "bio" | "interests" | "availability" | "radius_km"
+  "name" | "age" | "neighborhood" | "bio" | "interests" | "availability" | "radius_km" | "phone_number"
 >;
 
 export type IdentitySubmission = {
@@ -43,7 +48,11 @@ function normalizeProfile(profile: Partial<Profile> & Pick<Profile, "id">): Prof
     radius_km: 8,
     avatar: null,
     photo_urls: [],
-    verification_status: "not_started",
+    email_verified: false,
+    phone_number: null,
+    phone_verified: false,
+    selfie_verification_status: "not_started",
+    verification_status: "unverified",
     verification_submitted_at: null,
     created_at: new Date(0).toISOString(),
     ...profile,
@@ -85,6 +94,7 @@ export async function ensureProfile(session: Session): Promise<Profile> {
   if (!supabase) throw new Error("Add your Supabase environment keys to enable profiles.");
 
   const user = session.user;
+  await supabase.rpc("sync_current_email_verification").then(() => undefined);
   const { data: existing, error: readError } = await supabase
     .from("profiles")
     .select("*")
@@ -110,6 +120,7 @@ export async function ensureProfile(session: Session): Promise<Profile> {
       interests: ["Tennis", "Badminton", "Chess"],
       availability: "Flexible",
       radius_km: 8,
+      email_verified: Boolean(user.email_confirmed_at),
     })
     .select("*")
     .single();
@@ -163,6 +174,38 @@ export async function uploadProfilePhotos(uris: string[]): Promise<Profile> {
   return normalizeProfile(data as Profile);
 }
 
+export async function uploadPrimaryProfilePhoto(uri: string): Promise<Profile> {
+  if (!supabase) throw new Error("Add your Supabase environment keys to upload photos.");
+  const session = await getSession();
+  const { fileName } = getFileDetails(uri, "primary-profile");
+  const path = `${session.user.id}/${fileName}`;
+  await uploadImage("profile-photos", path, uri);
+  const publicUrl = supabase.storage.from("profile-photos").getPublicUrl(path).data.publicUrl;
+  const current = await ensureProfile(session);
+  const photoUrls = [publicUrl, ...current.photo_urls.filter((url) => url !== publicUrl)];
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ avatar: publicUrl, photo_urls: photoUrls })
+    .eq("id", session.user.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return normalizeProfile(data as Profile);
+}
+
+export async function submitSelfieVerification(selfieUri: string): Promise<Profile> {
+  if (!supabase) throw new Error("Add your Supabase environment keys to verify your selfie.");
+  const session = await getSession();
+  const { fileName } = getFileDetails(selfieUri, "verification-selfie");
+  const path = `${session.user.id}/${Date.now()}/${fileName}`;
+  await uploadImage("identity-documents", path, selfieUri);
+  const { error } = await supabase.rpc("submit_selfie_verification", {
+    p_selfie_path: path,
+  });
+  if (error) throw error;
+  return ensureProfile(session);
+}
+
 export async function submitIdentityVerification(submission: IdentitySubmission): Promise<Profile> {
   if (!supabase) throw new Error("Add your Supabase environment keys to verify identity.");
   const session = await getSession();
@@ -194,12 +237,25 @@ export async function submitIdentityVerification(submission: IdentitySubmission)
 }
 
 export function isProfileReady(profile: Profile | null | undefined) {
+  return isProfileVerified(profile);
+}
+
+export function isProfileVerified(profile: Profile | null | undefined) {
   return Boolean(
     profile &&
-    profile.name.trim() &&
-    profile.bio?.trim() &&
-    profile.interests.length >= 3 &&
-    profile.photo_urls.length >= 5 &&
-    profile.verification_status === "verified",
+    profile.verification_status === "verified" &&
+    profile.email_verified &&
+    profile.phone_number?.trim() &&
+    profile.avatar?.trim() &&
+    profile.selfie_verification_status === "approved",
   );
+}
+
+export function getVerificationChecklist(profile: Profile | null | undefined) {
+  return {
+    email: Boolean(profile?.email_verified),
+    phone: Boolean(profile?.phone_number?.trim()),
+    photo: Boolean(profile?.avatar?.trim()),
+    selfie: profile?.selfie_verification_status === "approved",
+  };
 }

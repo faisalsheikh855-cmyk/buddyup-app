@@ -19,6 +19,10 @@ export type Activity = {
     name: string;
     neighborhood: string;
     avatar: string | null;
+    email_verified: boolean;
+    phone_number: string | null;
+    selfie_verification_status: "not_started" | "pending" | "approved" | "rejected";
+    verification_status: "unverified" | "pending" | "verified" | "rejected";
   } | null;
   request_status?: "pending" | "accepted" | "declined" | null;
 };
@@ -63,7 +67,10 @@ export async function listActivities(): Promise<Activity[]> {
     .from("activities")
     .select(`
       *,
-      host:profiles!activities_host_id_fkey(id, name, neighborhood, avatar)
+      host:profiles!activities_host_id_fkey(
+        id, name, neighborhood, avatar, email_verified, phone_number,
+        selfie_verification_status, verification_status
+      )
     `)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -99,7 +106,10 @@ export async function getActivity(id: string): Promise<Activity> {
     .from("activities")
     .select(`
       *,
-      host:profiles!activities_host_id_fkey(id, name, neighborhood, avatar)
+      host:profiles!activities_host_id_fkey(
+        id, name, neighborhood, avatar, email_verified, phone_number,
+        selfie_verification_status, verification_status
+      )
     `)
     .eq("id", id)
     .single();
@@ -127,7 +137,7 @@ export async function createActivity(draft: ActivityDraft): Promise<Activity> {
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Sign in to create an activity.");
   if (!isProfileReady(profile)) {
-    throw new Error("Complete your profile, add 5 recent photos, and verify your identity before creating an activity.");
+    throw new Error("To keep BuddyUp safe, only verified members can create activities or send join requests.");
   }
 
   const { data, error } = await client
@@ -156,7 +166,7 @@ export async function requestToJoin(activityId: string, message = "I'd like to j
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Sign in to request to join.");
   if (!isProfileReady(profile)) {
-    throw new Error("Complete your profile, add 5 recent photos, and verify your identity before requesting to join.");
+    throw new Error("To keep BuddyUp safe, only verified members can create activities or send join requests.");
   }
 
   const { data, error } = await client

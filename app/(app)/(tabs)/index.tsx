@@ -1,10 +1,13 @@
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { Screen } from "@/components/ui/screen";
+import { TrustBadges } from "@/components/trust-badges";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useActivities, useRequestToJoin } from "@/features/activities/hooks";
 import type { Activity } from "@/features/activities/api";
+import { isProfileVerified } from "@/features/profile/api";
+import { useCurrentProfile } from "@/features/profile/hooks";
 import { colors } from "@/theme/tokens";
 
 type Category = {
@@ -29,6 +32,7 @@ type Plan = {
   image: string;
   tint: string;
   requestStatus?: Activity["request_status"];
+  hostTrust?: Activity["host"];
 };
 
 const filters = ["Today", "Tomorrow", "This weekend", "Nearby", "Beginner", "Indoor", "Needs 1 more"];
@@ -197,6 +201,7 @@ function planFromActivity(activity: Activity): Plan {
     host: `Hosted by ${activity.host?.name ?? "BuddyUp host"}`,
     trust: activity.host?.neighborhood ? `${activity.host.neighborhood} host` : "Verified host",
     requestStatus: activity.request_status,
+    hostTrust: activity.host,
     ...visual,
   };
 }
@@ -281,6 +286,7 @@ function FeaturedPlan({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => vo
         <View className="min-w-0 flex-1 pr-3">
           <Text className="text-[13px] font-extrabold text-ink">{plan.host}</Text>
           <Text className="mt-0.5 text-[12px] font-semibold text-muted">{plan.trust}</Text>
+          {plan.hostTrust ? <View className="mt-2"><TrustBadges profile={plan.hostTrust} compact showPlaceholder={false} /></View> : null}
         </View>
         <JoinPill plan={plan} onJoin={onJoin} />
       </View>
@@ -325,6 +331,7 @@ function PlanCard({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => void }
           </View>
           <Text className="text-[17px] font-extrabold leading-5 text-ink">{plan.title}</Text>
           <Text className="mt-1 text-[12px] font-semibold text-muted">{plan.place}</Text>
+          {plan.hostTrust ? <View className="mt-2"><TrustBadges profile={plan.hostTrust} compact showPlaceholder={false} /></View> : null}
         </View>
         <View className="mt-2 flex-row items-center justify-between gap-2">
           <Text className="min-w-0 flex-1 text-[12px] font-bold text-ink">{plan.spots} · {plan.level}</Text>
@@ -360,6 +367,7 @@ export default function FeedScreen() {
   const { width: viewportWidth } = useWindowDimensions();
   const activitiesQuery = useActivities();
   const joinMutation = useRequestToJoin();
+  const profileQuery = useCurrentProfile();
   const contentWidth = Math.min(viewportWidth, 480) - 40;
   const gap = 12;
   const categoryWidth = (contentWidth - gap) / 2;
@@ -369,6 +377,10 @@ export default function FeedScreen() {
   const displayedBeginnerPlans = livePlans.filter((plan) => /beginner|casual|easy|all/i.test(plan.level)).slice(0, 4);
 
   function joinPlan(plan: Plan) {
+    if (!isProfileVerified(profileQuery.data)) {
+      router.push("/verification" as Href);
+      return;
+    }
     joinMutation.mutate({ activityId: plan.id });
   }
 

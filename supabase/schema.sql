@@ -11,14 +11,23 @@ create table if not exists public.profiles (
   radius_km integer not null default 8 check (radius_km between 1 and 50),
   avatar text,
   photo_urls text[] not null default '{}',
-  verification_status text not null default 'not_started'
-    check (verification_status in ('not_started', 'pending', 'verified', 'rejected')),
+  email_verified boolean not null default false,
+  phone_number text,
+  phone_verified boolean not null default false,
+  selfie_verification_status text not null default 'not_started'
+    check (selfie_verification_status in ('not_started', 'pending', 'approved', 'rejected')),
+  verification_status text not null default 'unverified'
+    check (verification_status in ('unverified', 'pending', 'verified', 'rejected')),
   verification_submitted_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 alter table public.profiles add column if not exists photo_urls text[] not null default '{}';
-alter table public.profiles add column if not exists verification_status text not null default 'not_started';
+alter table public.profiles add column if not exists email_verified boolean not null default false;
+alter table public.profiles add column if not exists phone_number text;
+alter table public.profiles add column if not exists phone_verified boolean not null default false;
+alter table public.profiles add column if not exists selfie_verification_status text not null default 'not_started';
+alter table public.profiles add column if not exists verification_status text not null default 'unverified';
 alter table public.profiles add column if not exists verification_submitted_at timestamptz;
 
 create table if not exists public.identity_verification_submissions (
@@ -30,6 +39,15 @@ create table if not exists public.identity_verification_submissions (
   selfie_path text not null,
   status text not null default 'pending' check (status in ('pending', 'verified', 'rejected')),
   rejection_reason text,
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
+create table if not exists public.selfie_verification_submissions (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  selfie_path text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   created_at timestamptz not null default now(),
   reviewed_at timestamptz
 );
@@ -79,13 +97,148 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references public.profiles(id) on delete cascade,
+  reported_user_id uuid not null references public.profiles(id) on delete cascade,
+  activity_id uuid references public.activities(id) on delete set null,
+  reason text not null check (length(reason) between 3 and 500),
+  created_at timestamptz not null default now(),
+  check (reporter_id <> reported_user_id)
+);
+
+create table if not exists public.user_blocks (
+  blocker_id uuid not null references public.profiles(id) on delete cascade,
+  blocked_user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_user_id),
+  check (blocker_id <> blocked_user_id)
+);
+
+create table if not exists public.safety_checkins (
+  id uuid primary key default gen_random_uuid(),
+  activity_id uuid not null references public.activities(id) on delete cascade,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null check (status in ('safe', 'need_help')),
+  note text,
+  created_at timestamptz not null default now(),
+  unique (activity_id, profile_id)
+);
+
 alter table public.profiles enable row level security;
 alter table public.identity_verification_submissions enable row level security;
+alter table public.selfie_verification_submissions enable row level security;
 alter table public.activities enable row level security;
 alter table public.activity_requests enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.messages enable row level security;
+alter table public.user_reports enable row level security;
+alter table public.user_blocks enable row level security;
+alter table public.safety_checkins enable row level security;
+
+create or replace function public.calculate_profile_verification_status()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.selfie_verification_status = 'rejected' then
+    new.verification_status := 'rejected';
+  elsif new.email_verified = true
+    and nullif(trim(new.phone_number), '') is not null
+    and nullif(trim(new.avatar), '') is not null
+    and new.selfie_verification_status = 'approved' then
+    new.verification_status := 'verified';
+  elsif new.selfie_verification_status = 'pending' then
+    new.verification_status := 'pending';
+  else
+    new.verification_status := 'unverified';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_calculate_verification_status on public.profiles;
+create trigger profiles_calculate_verification_status
+before insert or update on public.profiles
+for each row execute function public.calculate_profile_verification_status();
+
+create or replace function public.is_profile_verified(p_profile_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = p_profile_id
+      and p.verification_status = 'verified'
+      and p.email_verified = true
+      and nullif(trim(p.phone_number), '') is not null
+      and nullif(trim(p.avatar), '') is not null
+      and p.selfie_verification_status = 'approved'
+  );
+$$;
+
+create or replace function public.sync_current_email_verification()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_verified boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select email_confirmed_at is not null into v_verified
+  from auth.users
+  where id = auth.uid();
+
+  update public.profiles
+  set email_verified = coalesce(v_verified, false)
+  where id = auth.uid();
+
+  return coalesce(v_verified, false);
+end;
+$$;
+
+create or replace function public.submit_selfie_verification(p_selfie_path text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_submission_id uuid;
+  v_user_prefix text := auth.uid()::text || '/';
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if p_selfie_path not like v_user_prefix || '%' then
+    raise exception 'Invalid selfie path';
+  end if;
+
+  insert into public.selfie_verification_submissions (profile_id, selfie_path)
+  values (auth.uid(), p_selfie_path)
+  returning id into v_submission_id;
+
+  update public.profiles
+  set verification_status = 'pending',
+      selfie_verification_status = 'pending',
+      verification_submitted_at = now()
+  where id = auth.uid();
+
+  return v_submission_id;
+end;
+$$;
 
 create or replace function public.is_conversation_member(p_conversation_id uuid)
 returns boolean
@@ -173,7 +326,9 @@ begin
   returning id into v_submission_id;
 
   update public.profiles
-  set verification_status = 'pending', verification_submitted_at = now()
+  set verification_status = 'pending',
+      selfie_verification_status = 'pending',
+      verification_submitted_at = now()
   where id = auth.uid();
 
   return v_submission_id;
@@ -183,15 +338,21 @@ $$;
 revoke all on function public.accept_activity_request(uuid) from public;
 revoke all on function public.is_conversation_member(uuid) from public;
 revoke all on function public.submit_identity_verification(text, text, text, text) from public;
+revoke all on function public.is_profile_verified(uuid) from public;
+revoke all on function public.sync_current_email_verification() from public;
+revoke all on function public.submit_selfie_verification(text) from public;
 grant execute on function public.accept_activity_request(uuid) to authenticated;
 grant execute on function public.is_conversation_member(uuid) to authenticated;
 grant execute on function public.submit_identity_verification(text, text, text, text) to authenticated;
+grant execute on function public.is_profile_verified(uuid) to authenticated;
+grant execute on function public.sync_current_email_verification() to authenticated;
+grant execute on function public.submit_selfie_verification(text) to authenticated;
 
 create policy "Authenticated users can view profiles" on public.profiles for select to authenticated using (true);
 drop policy if exists "Users manage their own profile" on public.profiles;
 create policy "Users create their own unverified profile" on public.profiles
   for insert to authenticated
-  with check (auth.uid() = id and verification_status = 'not_started');
+  with check (auth.uid() = id and verification_status = 'unverified');
 create policy "Users update their own profile" on public.profiles
   for update to authenticated
   using (auth.uid() = id)
@@ -200,14 +361,20 @@ create policy "Users view their own verification submissions" on public.identity
   for select to authenticated using (auth.uid() = profile_id);
 create policy "Users create their own verification submissions" on public.identity_verification_submissions
   for insert to authenticated with check (auth.uid() = profile_id and status = 'pending');
+create policy "Users view their own selfie submissions" on public.selfie_verification_submissions
+  for select to authenticated using (auth.uid() = profile_id);
+create policy "Users create their own selfie submissions" on public.selfie_verification_submissions
+  for insert to authenticated with check (auth.uid() = profile_id and status = 'pending');
 
 create policy "Authenticated users browse activities" on public.activities for select to authenticated using (true);
-create policy "Hosts create activities" on public.activities for insert to authenticated with check (auth.uid() = host_id);
+create policy "Hosts create activities" on public.activities for insert to authenticated
+  with check (auth.uid() = host_id and public.is_profile_verified(auth.uid()));
 create policy "Hosts update activities" on public.activities for update to authenticated using (auth.uid() = host_id) with check (auth.uid() = host_id);
 
 create policy "Participants view requests" on public.activity_requests for select to authenticated
   using (auth.uid() = requester_id or auth.uid() = (select host_id from public.activities where id = activity_id));
-create policy "Users request activities" on public.activity_requests for insert to authenticated with check (auth.uid() = requester_id);
+create policy "Users request activities" on public.activity_requests for insert to authenticated
+  with check (auth.uid() = requester_id and public.is_profile_verified(auth.uid()));
 create policy "Hosts answer requests" on public.activity_requests for update to authenticated
   using (auth.uid() = (select host_id from public.activities where id = activity_id));
 
@@ -224,10 +391,25 @@ create policy "Members read messages" on public.messages for select to authentic
 create policy "Members send messages" on public.messages for insert to authenticated
   with check (auth.uid() = sender_id and public.is_conversation_member(messages.conversation_id));
 
+create policy "Users create reports" on public.user_reports for insert to authenticated
+  with check (auth.uid() = reporter_id);
+create policy "Users view their own reports" on public.user_reports for select to authenticated
+  using (auth.uid() = reporter_id);
+create policy "Users manage their blocks" on public.user_blocks for all to authenticated
+  using (auth.uid() = blocker_id)
+  with check (auth.uid() = blocker_id);
+create policy "Users manage their safety checkins" on public.safety_checkins for all to authenticated
+  using (auth.uid() = profile_id)
+  with check (auth.uid() = profile_id);
+
 create index if not exists activities_created_at_idx on public.activities(created_at desc);
 create index if not exists requests_activity_idx on public.activity_requests(activity_id);
 create index if not exists messages_conversation_idx on public.messages(conversation_id, created_at);
 create index if not exists verification_profile_idx on public.identity_verification_submissions(profile_id, created_at desc);
+create index if not exists selfie_verification_profile_idx on public.selfie_verification_submissions(profile_id, created_at desc);
+create index if not exists user_reports_reported_idx on public.user_reports(reported_user_id, created_at desc);
+create index if not exists user_blocks_blocked_idx on public.user_blocks(blocked_user_id);
+create index if not exists safety_checkins_activity_idx on public.safety_checkins(activity_id);
 
 insert into storage.buckets (id, name, public)
 values ('profile-photos', 'profile-photos', true)
@@ -257,5 +439,5 @@ create policy "Users view their own identity documents" on storage.objects
   using (bucket_id = 'identity-documents' and (storage.foldername(name))[1] = auth.uid()::text);
 
 revoke update on public.profiles from authenticated;
-grant update (name, age, neighborhood, bio, interests, availability, radius_km, avatar, photo_urls)
+grant update (name, age, neighborhood, bio, interests, availability, radius_km, avatar, photo_urls, phone_number)
   on public.profiles to authenticated;

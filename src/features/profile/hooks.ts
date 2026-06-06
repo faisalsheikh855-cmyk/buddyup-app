@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getCurrentProfile,
+  submitSelfieVerification,
   submitIdentityVerification,
   updateCurrentProfile,
+  uploadPrimaryProfilePhoto,
   uploadProfilePhotos,
 } from "./api";
 
@@ -31,6 +33,26 @@ export function useUploadProfilePhotos() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: uploadProfilePhotos,
+    onSuccess: (profile) => {
+      queryClient.setQueryData(profileKeys.current, profile);
+    },
+  });
+}
+
+export function useUploadPrimaryProfilePhoto() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: uploadPrimaryProfilePhoto,
+    onSuccess: (profile) => {
+      queryClient.setQueryData(profileKeys.current, profile);
+    },
+  });
+}
+
+export function useSubmitSelfieVerification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: submitSelfieVerification,
     onSuccess: (profile) => {
       queryClient.setQueryData(profileKeys.current, profile);
     },
