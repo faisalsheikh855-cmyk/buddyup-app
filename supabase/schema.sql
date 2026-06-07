@@ -348,56 +348,79 @@ grant execute on function public.is_profile_verified(uuid) to authenticated;
 grant execute on function public.sync_current_email_verification() to authenticated;
 grant execute on function public.submit_selfie_verification(text) to authenticated;
 
+drop policy if exists "Authenticated users can view profiles" on public.profiles;
 create policy "Authenticated users can view profiles" on public.profiles for select to authenticated using (true);
 drop policy if exists "Users manage their own profile" on public.profiles;
+drop policy if exists "Users create their own unverified profile" on public.profiles;
 create policy "Users create their own unverified profile" on public.profiles
   for insert to authenticated
   with check (auth.uid() = id and verification_status = 'unverified');
+drop policy if exists "Users update their own profile" on public.profiles;
 create policy "Users update their own profile" on public.profiles
   for update to authenticated
   using (auth.uid() = id)
   with check (auth.uid() = id);
+drop policy if exists "Users view their own verification submissions" on public.identity_verification_submissions;
 create policy "Users view their own verification submissions" on public.identity_verification_submissions
   for select to authenticated using (auth.uid() = profile_id);
+drop policy if exists "Users create their own verification submissions" on public.identity_verification_submissions;
 create policy "Users create their own verification submissions" on public.identity_verification_submissions
   for insert to authenticated with check (auth.uid() = profile_id and status = 'pending');
+drop policy if exists "Users view their own selfie submissions" on public.selfie_verification_submissions;
 create policy "Users view their own selfie submissions" on public.selfie_verification_submissions
   for select to authenticated using (auth.uid() = profile_id);
+drop policy if exists "Users create their own selfie submissions" on public.selfie_verification_submissions;
 create policy "Users create their own selfie submissions" on public.selfie_verification_submissions
   for insert to authenticated with check (auth.uid() = profile_id and status = 'pending');
 
+drop policy if exists "Authenticated users browse activities" on public.activities;
 create policy "Authenticated users browse activities" on public.activities for select to authenticated using (true);
+drop policy if exists "Hosts create activities" on public.activities;
 create policy "Hosts create activities" on public.activities for insert to authenticated
   with check (auth.uid() = host_id and public.is_profile_verified(auth.uid()));
+drop policy if exists "Hosts update activities" on public.activities;
 create policy "Hosts update activities" on public.activities for update to authenticated using (auth.uid() = host_id) with check (auth.uid() = host_id);
 
+drop policy if exists "Participants view requests" on public.activity_requests;
 create policy "Participants view requests" on public.activity_requests for select to authenticated
   using (auth.uid() = requester_id or auth.uid() = (select host_id from public.activities where id = activity_id));
+drop policy if exists "Users request activities" on public.activity_requests;
 create policy "Users request activities" on public.activity_requests for insert to authenticated
   with check (auth.uid() = requester_id and public.is_profile_verified(auth.uid()));
+drop policy if exists "Hosts answer requests" on public.activity_requests;
 create policy "Hosts answer requests" on public.activity_requests for update to authenticated
   using (auth.uid() = (select host_id from public.activities where id = activity_id));
 
+drop policy if exists "Members view conversations" on public.conversations;
 create policy "Members view conversations" on public.conversations for select to authenticated
   using (public.is_conversation_member(id));
+drop policy if exists "Hosts start conversations" on public.conversations;
 create policy "Hosts start conversations" on public.conversations for insert to authenticated
   with check (auth.uid() = (select host_id from public.activities where id = activity_id));
+drop policy if exists "Members view conversation memberships" on public.conversation_members;
 create policy "Members view conversation memberships" on public.conversation_members for select to authenticated
   using (public.is_conversation_member(conversation_id));
+drop policy if exists "Hosts add conversation members" on public.conversation_members;
 create policy "Hosts add conversation members" on public.conversation_members for insert to authenticated
   with check (exists (select 1 from public.conversations c join public.activities a on a.id = c.activity_id where c.id = conversation_id and a.host_id = auth.uid()));
+drop policy if exists "Members read messages" on public.messages;
 create policy "Members read messages" on public.messages for select to authenticated
   using (public.is_conversation_member(messages.conversation_id));
+drop policy if exists "Members send messages" on public.messages;
 create policy "Members send messages" on public.messages for insert to authenticated
   with check (auth.uid() = sender_id and public.is_conversation_member(messages.conversation_id));
 
+drop policy if exists "Users create reports" on public.user_reports;
 create policy "Users create reports" on public.user_reports for insert to authenticated
   with check (auth.uid() = reporter_id);
+drop policy if exists "Users view their own reports" on public.user_reports;
 create policy "Users view their own reports" on public.user_reports for select to authenticated
   using (auth.uid() = reporter_id);
+drop policy if exists "Users manage their blocks" on public.user_blocks;
 create policy "Users manage their blocks" on public.user_blocks for all to authenticated
   using (auth.uid() = blocker_id)
   with check (auth.uid() = blocker_id);
+drop policy if exists "Users manage their safety checkins" on public.safety_checkins;
 create policy "Users manage their safety checkins" on public.safety_checkins for all to authenticated
   using (auth.uid() = profile_id)
   with check (auth.uid() = profile_id);
@@ -419,21 +442,27 @@ insert into storage.buckets (id, name, public)
 values ('identity-documents', 'identity-documents', false)
 on conflict (id) do update set public = excluded.public;
 
+drop policy if exists "Users upload their own profile photos" on storage.objects;
 create policy "Users upload their own profile photos" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "Users update their own profile photos" on storage.objects;
 create policy "Users update their own profile photos" on storage.objects
   for update to authenticated
   using (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "Users delete their own profile photos" on storage.objects;
 create policy "Users delete their own profile photos" on storage.objects
   for delete to authenticated
   using (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "Public profile photos are readable" on storage.objects;
 create policy "Public profile photos are readable" on storage.objects
   for select using (bucket_id = 'profile-photos');
 
+drop policy if exists "Users upload their own identity documents" on storage.objects;
 create policy "Users upload their own identity documents" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'identity-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "Users view their own identity documents" on storage.objects;
 create policy "Users view their own identity documents" on storage.objects
   for select to authenticated
   using (bucket_id = 'identity-documents' and (storage.foldername(name))[1] = auth.uid()::text);
