@@ -1,4 +1,8 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+
+if (existsSync(".env.local")) {
+  process.loadEnvFile(".env.local");
+}
 
 const runtimeEnv = {
   EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
