@@ -2,7 +2,7 @@
 
 ## Product Boundary
 
-BuddyUp is a platonic activity-partner app for iOS and Android. The first native delivery slice is onboarding and authentication. Activity discovery, posting, requests, chat, profile management, notifications, and settings have route ownership defined here and will be implemented on top of the same foundation.
+BuddyUp is a platonic activity-partner app for iOS, Android, and web. Its MVP includes authentication, profiles, selfie verification, activity discovery and hosting, join requests, accepted-member chat, blocking, reporting, and safety check-ins.
 
 ## Stack
 
@@ -86,12 +86,13 @@ Permissions are requested at the moment a feature is used, with explanatory UI b
 
 ## Backend Shape
 
-The existing Supabase SQL remains the baseline for profiles, activities, requests, conversations, and messages. Native additions planned after auth:
-
-- Storage bucket and policies for avatar/activity media.
-- Device push token table scoped to authenticated profiles.
-- Latitude/longitude or geohash data with privacy-preserving distance queries.
-- Realtime message subscription policies.
+- Supabase Auth creates and maintains one `profiles` row per account.
+- PostgreSQL and RLS enforce verified-only activity creation, join requests, reporting, and messaging.
+- Accepted requests create one host/participant conversation.
+- Realtime refreshes message queries for conversation members.
+- Public `avatars` and private `selfie-verifications` buckets use user-folder policies.
+- Admin-only selfie review is enforced by a security-definer function that checks `profiles.is_admin`.
+- Blocks are checked in profile, activity, request, and message policies.
 
 ## Deployment
 
@@ -101,10 +102,12 @@ The existing Supabase SQL remains the baseline for profiles, activities, request
 - Netlify environment variables provide the public Supabase URL and publishable client key at web build time.
 - iOS and Android releases use EAS Build and platform stores; Netlify does not distribute native application binaries.
 
-## Implementation Sequence
+## Production Validation
 
-1. Native Expo foundation, providers, semantic UI primitives.
-2. Onboarding and Supabase email authentication.
-3. Authenticated tab shell, profile completion, media upload and location consent.
-4. Activity feed/create/detail with animated gestures.
-5. Requests, realtime chat, notifications and settings.
+The required release checks are:
+
+1. `npm run build:supabase`
+2. `npm run test:backend`
+3. `npm run typecheck`
+4. `npm run lint`
+5. `npm run build:web`

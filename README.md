@@ -92,6 +92,17 @@ The `EXPO_BASE_URL` value makes generated assets load under `/buddyup-app`. The 
 
 ## Supabase Production Setup
 
+### Fresh Project Checklist
+
+1. Create a Supabase project.
+2. Run `supabase/schema.sql` in the SQL Editor.
+3. Run `supabase/rls.sql`.
+4. Run `supabase/storage.sql`.
+5. Add `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to `.env.local`.
+6. Add the same public variables in Netlify.
+7. Configure the production Site URL and `/auth` redirect in Supabase Auth.
+8. Redeploy Netlify.
+
 Run the SQL files in this exact order using **Supabase Dashboard → SQL Editor → New query**:
 
 1. [`supabase/schema.sql`](supabase/schema.sql): tables, compatibility upgrades, triggers, functions and indexes.

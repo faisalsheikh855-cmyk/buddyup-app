@@ -51,6 +51,9 @@ for (const table of requiredTables) {
 
 for (const fn of requiredFunctions) {
   if (!schema.includes(`function public.${fn}`)) failures.push(`Missing function: ${fn}`);
+  if (!schema.includes(`revoke all on function public.${fn}`)) {
+    failures.push(`Missing explicit function revoke: ${fn}`);
+  }
 }
 
 for (const policy of requiredPolicies) {
@@ -63,6 +66,34 @@ for (const bucket of ["avatars", "selfie-verifications"]) {
 
 for (const source of [schema, rls, storage]) {
   if (!setup.includes(source.trim())) failures.push("supabase/setup.sql is stale; run npm run build:supabase");
+}
+
+if (schema.includes("current_user auth.users")) {
+  failures.push("Reserved PostgreSQL current_user keyword is used as a record variable");
+}
+if (!schema.includes("from auth.users user_record")) {
+  failures.push("Existing auth users are not backfilled into profiles");
+}
+if (!schema.includes("from public, anon, authenticated")) {
+  failures.push("Security-definer functions are not explicitly revoked from anonymous roles");
+}
+if (!rls.includes("revoke all on table public.profiles from anon, authenticated")) {
+  failures.push("Public API table grants are not explicitly restricted");
+}
+if (!rls.includes("grant update (status) on table public.activity_requests to authenticated")) {
+  failures.push("Activity request updates are not limited to the status column");
+}
+if (rls.replaceAll("(select auth.uid())", "").includes("auth.uid()")) {
+  failures.push("RLS policies contain uncached auth.uid() calls");
+}
+if (storage.replaceAll("(select auth.uid())", "").includes("auth.uid()")) {
+  failures.push("Storage policies contain uncached auth.uid() calls");
+}
+if (storage.includes('create policy "Public avatar reads"')) {
+  failures.push("Public avatar bucket allows object listing");
+}
+if (schema.includes("safety_checkins_activity_user_unique_idx")) {
+  failures.push("Safety check-ins define a duplicate unique index");
 }
 
 if (!profileApi.includes('from("selfie_verifications")')) failures.push("Profile API is not connected to selfie_verifications");

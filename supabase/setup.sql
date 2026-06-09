@@ -127,6 +127,7 @@ alter table public.activities add column if not exists max_people integer not nu
 alter table public.activities add column if not exists status text not null default 'open';
 alter table public.activities add column if not exists visibility text not null default 'public';
 alter table public.activities add column if not exists updated_at timestamptz not null default now();
+alter table public.activities alter column description drop not null;
 
 update public.activities
 set created_by = coalesce(created_by, (to_jsonb(activities)->>'host_id')::uuid),
@@ -376,6 +377,22 @@ create trigger on_auth_user_created
 after insert or update of email_confirmed_at on auth.users
 for each row execute function public.handle_new_user();
 
+insert into public.profiles (id, full_name, username, email_verified)
+select
+  user_record.id,
+  coalesce(
+    nullif(user_record.raw_user_meta_data->>'full_name', ''),
+    split_part(coalesce(user_record.email, ''), '@', 1),
+    'BuddyUp member'
+  ),
+  'buddy_' || substr(replace(user_record.id::text, '-', ''), 1, 10),
+  user_record.email_confirmed_at is not null
+from auth.users user_record
+on conflict (id) do update
+set email_verified = excluded.email_verified,
+    full_name = coalesce(nullif(public.profiles.full_name, ''), excluded.full_name),
+    username = coalesce(public.profiles.username, excluded.username);
+
 create or replace function public.is_admin_user(user_id uuid)
 returns boolean
 language sql
@@ -443,24 +460,24 @@ security definer
 set search_path = public, auth
 as $$
 declare
-  current_user auth.users;
+  user_record auth.users;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
   end if;
 
-  select * into current_user from auth.users where id = auth.uid();
+  select * into user_record from auth.users where id = auth.uid();
 
   insert into public.profiles (id, full_name, username, email_verified)
   values (
-    current_user.id,
+    user_record.id,
     coalesce(
-      nullif(current_user.raw_user_meta_data->>'full_name', ''),
-      split_part(coalesce(current_user.email, ''), '@', 1),
+      nullif(user_record.raw_user_meta_data->>'full_name', ''),
+      split_part(coalesce(user_record.email, ''), '@', 1),
       'BuddyUp member'
     ),
-    'buddy_' || substr(replace(current_user.id::text, '-', ''), 1, 10),
-    current_user.email_confirmed_at is not null
+    'buddy_' || substr(replace(user_record.id::text, '-', ''), 1, 10),
+    user_record.email_confirmed_at is not null
   )
   on conflict (id) do update
   set email_verified = excluded.email_verified;
@@ -524,13 +541,17 @@ begin
   if decision not in ('approved', 'rejected') then
     raise exception 'Invalid decision';
   end if;
-  if decision = 'rejected' and nullif(trim(rejection_reason), '') is null then
+  if decision = 'rejected'
+     and nullif(trim(review_selfie_verification.rejection_reason), '') is null then
     raise exception 'A rejection reason is required';
   end if;
 
   update public.selfie_verifications
   set status = decision,
-      rejection_reason = case when decision = 'rejected' then trim(rejection_reason) else null end,
+      rejection_reason = case
+        when decision = 'rejected' then trim(review_selfie_verification.rejection_reason)
+        else null
+      end,
       reviewed_by = auth.uid(),
       reviewed_at = now()
   where id = verification_id and status = 'pending'
@@ -543,13 +564,17 @@ begin
   update public.profiles
   set selfie_verified = decision = 'approved',
       verification_status = case when decision = 'approved' then 'verified' else 'rejected' end,
-      verification_rejection_reason = case when decision = 'rejected' then trim(rejection_reason) else null end,
+      verification_rejection_reason = case
+        when decision = 'rejected' then trim(review_selfie_verification.rejection_reason)
+        else null
+      end,
       trust_score = case when decision = 'approved' then greatest(trust_score, 60) else trust_score end
   where id = target_user;
 end;
 $$;
 
-create or replace function public.accept_activity_request(request_id uuid)
+drop function if exists public.accept_activity_request(uuid);
+create function public.accept_activity_request(request_id uuid)
 returns uuid
 language plpgsql
 security definer
@@ -584,14 +609,16 @@ $$;
 drop function if exists public.calculate_profile_verification_status();
 drop function if exists public.submit_identity_verification(text, text, text, text);
 
-revoke all on function public.is_admin_user(uuid) from public;
-revoke all on function public.users_are_blocked(uuid, uuid) from public;
-revoke all on function public.is_verified_user(uuid) from public;
-revoke all on function public.sync_current_email_verification() from public;
-revoke all on function public.get_current_profile() from public;
-revoke all on function public.submit_selfie_verification(text) from public;
-revoke all on function public.review_selfie_verification(uuid, text, text) from public;
-revoke all on function public.accept_activity_request(uuid) from public;
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.is_admin_user(uuid) from public, anon, authenticated;
+revoke all on function public.users_are_blocked(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.is_verified_user(uuid) from public, anon, authenticated;
+revoke all on function public.sync_current_email_verification() from public, anon, authenticated;
+revoke all on function public.get_current_profile() from public, anon, authenticated;
+revoke all on function public.submit_selfie_verification(text) from public, anon, authenticated;
+revoke all on function public.review_selfie_verification(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.accept_activity_request(uuid) from public, anon, authenticated;
 grant execute on function public.is_admin_user(uuid) to authenticated;
 grant execute on function public.users_are_blocked(uuid, uuid) to authenticated;
 grant execute on function public.is_verified_user(uuid) to authenticated;
@@ -610,12 +637,16 @@ create index if not exists conversations_participant_idx on public.conversations
 create unique index if not exists conversations_parties_unique_idx
   on public.conversations(activity_id, host_id, participant_id);
 create index if not exists messages_conversation_idx on public.messages(conversation_id, created_at);
+create index if not exists messages_sender_idx on public.messages(sender_id);
 create index if not exists selfie_verifications_pending_idx on public.selfie_verifications(status, created_at);
+create index if not exists selfie_verifications_user_idx on public.selfie_verifications(user_id);
+create index if not exists selfie_verifications_reviewer_idx on public.selfie_verifications(reviewed_by);
 create index if not exists reports_reported_user_idx on public.reports(reported_user_id, created_at desc);
+create index if not exists reports_reporter_idx on public.reports(reporter_id);
+create index if not exists reports_activity_idx on public.reports(activity_id);
 create index if not exists blocks_blocked_user_idx on public.blocks(blocked_user_id);
 create index if not exists safety_checkins_issue_idx on public.safety_checkins(status, updated_at desc);
-create unique index if not exists safety_checkins_activity_user_unique_idx
-  on public.safety_checkins(activity_id, user_id);
+create index if not exists safety_checkins_user_idx on public.safety_checkins(user_id);
 
 do $$
 begin
@@ -644,6 +675,36 @@ alter table public.reports enable row level security;
 alter table public.blocks enable row level security;
 alter table public.safety_checkins enable row level security;
 
+revoke all on table public.profiles from anon, authenticated;
+revoke all on table public.activities from anon, authenticated;
+revoke all on table public.activity_requests from anon, authenticated;
+revoke all on table public.conversations from anon, authenticated;
+revoke all on table public.messages from anon, authenticated;
+revoke all on table public.selfie_verifications from anon, authenticated;
+revoke all on table public.reports from anon, authenticated;
+revoke all on table public.blocks from anon, authenticated;
+revoke all on table public.safety_checkins from anon, authenticated;
+
+grant select on table public.activities to authenticated;
+grant insert on table public.activities to authenticated;
+grant update (
+  title, description, category, city, location_name, latitude, longitude,
+  activity_date, activity_time, max_people, status, visibility
+) on table public.activities to authenticated;
+grant delete on table public.activities to authenticated;
+
+grant select, insert on table public.activity_requests to authenticated;
+grant update (status) on table public.activity_requests to authenticated;
+
+grant select on table public.conversations to authenticated;
+grant select, insert on table public.messages to authenticated;
+grant select, insert on table public.selfie_verifications to authenticated;
+grant select, insert on table public.reports to authenticated;
+grant update (status) on table public.reports to authenticated;
+grant select, insert, delete on table public.blocks to authenticated;
+grant select, insert on table public.safety_checkins to authenticated;
+grant update (status, notes) on table public.safety_checkins to authenticated;
+
 drop policy if exists "Authenticated users can view profiles" on public.profiles;
 drop policy if exists "Users manage their own profile" on public.profiles;
 drop policy if exists "Users create their own unverified profile" on public.profiles;
@@ -652,15 +713,14 @@ drop policy if exists "Profiles visible unless blocked" on public.profiles;
 create policy "Profiles visible unless blocked" on public.profiles
 for select to authenticated
 using (
-  id = auth.uid()
-  or public.is_admin_user(auth.uid())
+  id = (select auth.uid())
+  or public.is_admin_user((select auth.uid()))
   or (
     not is_blocked
-    and not public.users_are_blocked(auth.uid(), id)
+    and not public.users_are_blocked((select auth.uid()), id)
   )
 );
 
-revoke select on public.profiles from authenticated;
 grant select (
   id, full_name, username, city, bio, avatar_url,
   email_verified, phone_verified, selfie_verified, verification_status,
@@ -670,8 +730,8 @@ grant select (
 drop policy if exists "Users update own profile" on public.profiles;
 create policy "Users update own profile" on public.profiles
 for update to authenticated
-using (id = auth.uid())
-with check (id = auth.uid());
+using (id = (select auth.uid()))
+with check (id = (select auth.uid()));
 
 revoke update on public.profiles from authenticated;
 grant update (full_name, username, city, bio, avatar_url, phone, interests)
@@ -684,30 +744,30 @@ drop policy if exists "Hosts update activities" on public.activities;
 create policy "Visible public activities" on public.activities
 for select to authenticated
 using (
-  created_by = auth.uid()
-  or public.is_admin_user(auth.uid())
+  created_by = (select auth.uid())
+  or public.is_admin_user((select auth.uid()))
   or (
     visibility = 'public'
     and status in ('open', 'full', 'completed')
-    and not public.users_are_blocked(auth.uid(), created_by)
+    and not public.users_are_blocked((select auth.uid()), created_by)
   )
 );
 
 drop policy if exists "Verified users create activities" on public.activities;
 create policy "Verified users create activities" on public.activities
 for insert to authenticated
-with check (created_by = auth.uid() and public.is_verified_user(auth.uid()));
+with check (created_by = (select auth.uid()) and public.is_verified_user((select auth.uid())));
 
 drop policy if exists "Creators update activities" on public.activities;
 create policy "Creators update activities" on public.activities
 for update to authenticated
-using (created_by = auth.uid())
-with check (created_by = auth.uid());
+using (created_by = (select auth.uid()))
+with check (created_by = (select auth.uid()));
 
 drop policy if exists "Creators delete activities" on public.activities;
 create policy "Creators delete activities" on public.activities
 for delete to authenticated
-using (created_by = auth.uid());
+using (created_by = (select auth.uid()));
 
 drop policy if exists "Request participants read requests" on public.activity_requests;
 drop policy if exists "Participants view requests" on public.activity_requests;
@@ -715,26 +775,26 @@ drop policy if exists "Users request activities" on public.activity_requests;
 drop policy if exists "Hosts answer requests" on public.activity_requests;
 create policy "Request participants read requests" on public.activity_requests
 for select to authenticated
-using (requester_id = auth.uid() or host_id = auth.uid() or public.is_admin_user(auth.uid()));
+using (requester_id = (select auth.uid()) or host_id = (select auth.uid()) or public.is_admin_user((select auth.uid())));
 
 drop policy if exists "Verified users create requests" on public.activity_requests;
 create policy "Verified users create requests" on public.activity_requests
 for insert to authenticated
 with check (
-  requester_id = auth.uid()
-  and host_id <> auth.uid()
-  and public.is_verified_user(auth.uid())
+  requester_id = (select auth.uid())
+  and host_id <> (select auth.uid())
+  and public.is_verified_user((select auth.uid()))
   and host_id = (select created_by from public.activities where id = activity_id and status = 'open')
-  and not public.users_are_blocked(auth.uid(), host_id)
+  and not public.users_are_blocked((select auth.uid()), host_id)
 );
 
 drop policy if exists "Participants update request status" on public.activity_requests;
 create policy "Participants update request status" on public.activity_requests
 for update to authenticated
-using (host_id = auth.uid() or requester_id = auth.uid())
+using (host_id = (select auth.uid()) or requester_id = (select auth.uid()))
 with check (
-  (host_id = auth.uid() and status in ('accepted', 'declined'))
-  or (requester_id = auth.uid() and status = 'cancelled')
+  (host_id = (select auth.uid()) and status in ('accepted', 'declined'))
+  or (requester_id = (select auth.uid()) and status = 'cancelled')
 );
 
 drop policy if exists "Conversation members read conversations" on public.conversations;
@@ -743,9 +803,9 @@ drop policy if exists "Hosts start conversations" on public.conversations;
 create policy "Conversation members read conversations" on public.conversations
 for select to authenticated
 using (
-  host_id = auth.uid()
-  or participant_id = auth.uid()
-  or public.is_admin_user(auth.uid())
+  host_id = (select auth.uid())
+  or participant_id = (select auth.uid())
+  or public.is_admin_user((select auth.uid()))
 );
 
 drop policy if exists "Conversation members read messages" on public.messages;
@@ -757,7 +817,7 @@ using (
   exists (
     select 1 from public.conversations c
     where c.id = conversation_id
-      and (c.host_id = auth.uid() or c.participant_id = auth.uid())
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
   )
 );
 
@@ -765,12 +825,12 @@ drop policy if exists "Verified conversation members send messages" on public.me
 create policy "Verified conversation members send messages" on public.messages
 for insert to authenticated
 with check (
-  sender_id = auth.uid()
-  and public.is_verified_user(auth.uid())
+  sender_id = (select auth.uid())
+  and public.is_verified_user((select auth.uid()))
   and exists (
     select 1 from public.conversations c
     where c.id = conversation_id
-      and (c.host_id = auth.uid() or c.participant_id = auth.uid())
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
       and not public.users_are_blocked(c.host_id, c.participant_id)
   )
 );
@@ -778,57 +838,57 @@ with check (
 drop policy if exists "Users create selfie verification" on public.selfie_verifications;
 create policy "Users create selfie verification" on public.selfie_verifications
 for insert to authenticated
-with check (user_id = auth.uid() and status = 'pending');
+with check (user_id = (select auth.uid()) and status = 'pending');
 
 drop policy if exists "Users and admins read selfie verification" on public.selfie_verifications;
 create policy "Users and admins read selfie verification" on public.selfie_verifications
 for select to authenticated
-using (user_id = auth.uid() or public.is_admin_user(auth.uid()));
+using (user_id = (select auth.uid()) or public.is_admin_user((select auth.uid())));
 
 drop policy if exists "Verified users create reports" on public.reports;
 create policy "Verified users create reports" on public.reports
 for insert to authenticated
 with check (
-  reporter_id = auth.uid()
+  reporter_id = (select auth.uid())
   and reporter_id <> reported_user_id
-  and public.is_verified_user(auth.uid())
+  and public.is_verified_user((select auth.uid()))
 );
 
 drop policy if exists "Reporters and admins read reports" on public.reports;
 create policy "Reporters and admins read reports" on public.reports
 for select to authenticated
-using (reporter_id = auth.uid() or public.is_admin_user(auth.uid()));
+using (reporter_id = (select auth.uid()) or public.is_admin_user((select auth.uid())));
 
 drop policy if exists "Admins update reports" on public.reports;
 create policy "Admins update reports" on public.reports
 for update to authenticated
-using (public.is_admin_user(auth.uid()))
-with check (public.is_admin_user(auth.uid()));
+using (public.is_admin_user((select auth.uid())))
+with check (public.is_admin_user((select auth.uid())));
 
 drop policy if exists "Users read own blocks" on public.blocks;
 create policy "Users read own blocks" on public.blocks
 for select to authenticated
-using (blocker_id = auth.uid());
+using (blocker_id = (select auth.uid()));
 
 drop policy if exists "Users create own blocks" on public.blocks;
 create policy "Users create own blocks" on public.blocks
 for insert to authenticated
-with check (blocker_id = auth.uid() and blocked_user_id <> auth.uid());
+with check (blocker_id = (select auth.uid()) and blocked_user_id <> (select auth.uid()));
 
 drop policy if exists "Users delete own blocks" on public.blocks;
 create policy "Users delete own blocks" on public.blocks
 for delete to authenticated
-using (blocker_id = auth.uid());
+using (blocker_id = (select auth.uid()));
 
 drop policy if exists "Activity members read checkins" on public.safety_checkins;
 create policy "Activity members read checkins" on public.safety_checkins
 for select to authenticated
 using (
-  user_id = auth.uid()
-  or (public.is_admin_user(auth.uid()) and status = 'issue_reported')
+  user_id = (select auth.uid())
+  or (public.is_admin_user((select auth.uid())) and status = 'issue_reported')
   or exists (
     select 1 from public.activities a
-    where a.id = activity_id and a.created_by = auth.uid()
+    where a.id = activity_id and a.created_by = (select auth.uid())
   )
 );
 
@@ -836,13 +896,13 @@ drop policy if exists "Activity members create checkins" on public.safety_checki
 create policy "Activity members create checkins" on public.safety_checkins
 for insert to authenticated
 with check (
-  user_id = auth.uid()
+  user_id = (select auth.uid())
   and (
-    exists (select 1 from public.activities a where a.id = activity_id and a.created_by = auth.uid())
+    exists (select 1 from public.activities a where a.id = activity_id and a.created_by = (select auth.uid()))
     or exists (
       select 1 from public.activity_requests r
       where r.activity_id = safety_checkins.activity_id
-        and r.requester_id = auth.uid()
+        and r.requester_id = (select auth.uid())
         and r.status = 'accepted'
     )
   )
@@ -851,8 +911,23 @@ with check (
 drop policy if exists "Users update own checkins" on public.safety_checkins;
 create policy "Users update own checkins" on public.safety_checkins
 for update to authenticated
-using (user_id = auth.uid())
-with check (user_id = auth.uid());
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+do $$
+begin
+  if to_regclass('public.conversation_members') is not null
+     and not exists (
+       select 1
+       from public.conversations
+       where host_id is null or participant_id is null
+     ) then
+    execute 'drop table public.conversation_members cascade';
+  end if;
+end $$;
+
+drop function if exists public.is_conversation_member(uuid);
+alter table public.activities drop column if exists host_id;
 
 -- ============================================================
 -- STORAGE BUCKETS AND POLICIES
@@ -891,16 +966,13 @@ drop policy if exists "Public profile photos are readable" on storage.objects;
 drop policy if exists "Users upload their own identity documents" on storage.objects;
 drop policy if exists "Users view their own identity documents" on storage.objects;
 drop policy if exists "Public avatar reads" on storage.objects;
-create policy "Public avatar reads" on storage.objects
-for select
-using (bucket_id = 'avatars');
 
 drop policy if exists "Users upload own avatar" on storage.objects;
 create policy "Users upload own avatar" on storage.objects
 for insert to authenticated
 with check (
   bucket_id = 'avatars'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 
 drop policy if exists "Users update own avatar" on storage.objects;
@@ -908,11 +980,11 @@ create policy "Users update own avatar" on storage.objects
 for update to authenticated
 using (
   bucket_id = 'avatars'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 )
 with check (
   bucket_id = 'avatars'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 
 drop policy if exists "Users delete own avatar" on storage.objects;
@@ -920,7 +992,7 @@ create policy "Users delete own avatar" on storage.objects
 for delete to authenticated
 using (
   bucket_id = 'avatars'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 
 drop policy if exists "Users upload own selfie" on storage.objects;
@@ -928,7 +1000,7 @@ create policy "Users upload own selfie" on storage.objects
 for insert to authenticated
 with check (
   bucket_id = 'selfie-verifications'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 
 drop policy if exists "Users and admins read selfie files" on storage.objects;
@@ -937,8 +1009,8 @@ for select to authenticated
 using (
   bucket_id = 'selfie-verifications'
   and (
-    (storage.foldername(name))[1] = auth.uid()::text
-    or public.is_admin_user(auth.uid())
+    (storage.foldername(name))[1] = (select auth.uid())::text
+    or public.is_admin_user((select auth.uid()))
   )
 );
 
@@ -947,5 +1019,5 @@ create policy "Users delete own pending selfie files" on storage.objects
 for delete to authenticated
 using (
   bucket_id = 'selfie-verifications'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (storage.foldername(name))[1] = (select auth.uid())::text
 );

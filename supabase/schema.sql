@@ -123,6 +123,7 @@ alter table public.activities add column if not exists max_people integer not nu
 alter table public.activities add column if not exists status text not null default 'open';
 alter table public.activities add column if not exists visibility text not null default 'public';
 alter table public.activities add column if not exists updated_at timestamptz not null default now();
+alter table public.activities alter column description drop not null;
 
 update public.activities
 set created_by = coalesce(created_by, (to_jsonb(activities)->>'host_id')::uuid),
@@ -372,6 +373,22 @@ create trigger on_auth_user_created
 after insert or update of email_confirmed_at on auth.users
 for each row execute function public.handle_new_user();
 
+insert into public.profiles (id, full_name, username, email_verified)
+select
+  user_record.id,
+  coalesce(
+    nullif(user_record.raw_user_meta_data->>'full_name', ''),
+    split_part(coalesce(user_record.email, ''), '@', 1),
+    'BuddyUp member'
+  ),
+  'buddy_' || substr(replace(user_record.id::text, '-', ''), 1, 10),
+  user_record.email_confirmed_at is not null
+from auth.users user_record
+on conflict (id) do update
+set email_verified = excluded.email_verified,
+    full_name = coalesce(nullif(public.profiles.full_name, ''), excluded.full_name),
+    username = coalesce(public.profiles.username, excluded.username);
+
 create or replace function public.is_admin_user(user_id uuid)
 returns boolean
 language sql
@@ -439,24 +456,24 @@ security definer
 set search_path = public, auth
 as $$
 declare
-  current_user auth.users;
+  user_record auth.users;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
   end if;
 
-  select * into current_user from auth.users where id = auth.uid();
+  select * into user_record from auth.users where id = auth.uid();
 
   insert into public.profiles (id, full_name, username, email_verified)
   values (
-    current_user.id,
+    user_record.id,
     coalesce(
-      nullif(current_user.raw_user_meta_data->>'full_name', ''),
-      split_part(coalesce(current_user.email, ''), '@', 1),
+      nullif(user_record.raw_user_meta_data->>'full_name', ''),
+      split_part(coalesce(user_record.email, ''), '@', 1),
       'BuddyUp member'
     ),
-    'buddy_' || substr(replace(current_user.id::text, '-', ''), 1, 10),
-    current_user.email_confirmed_at is not null
+    'buddy_' || substr(replace(user_record.id::text, '-', ''), 1, 10),
+    user_record.email_confirmed_at is not null
   )
   on conflict (id) do update
   set email_verified = excluded.email_verified;
@@ -520,13 +537,17 @@ begin
   if decision not in ('approved', 'rejected') then
     raise exception 'Invalid decision';
   end if;
-  if decision = 'rejected' and nullif(trim(rejection_reason), '') is null then
+  if decision = 'rejected'
+     and nullif(trim(review_selfie_verification.rejection_reason), '') is null then
     raise exception 'A rejection reason is required';
   end if;
 
   update public.selfie_verifications
   set status = decision,
-      rejection_reason = case when decision = 'rejected' then trim(rejection_reason) else null end,
+      rejection_reason = case
+        when decision = 'rejected' then trim(review_selfie_verification.rejection_reason)
+        else null
+      end,
       reviewed_by = auth.uid(),
       reviewed_at = now()
   where id = verification_id and status = 'pending'
@@ -539,13 +560,17 @@ begin
   update public.profiles
   set selfie_verified = decision = 'approved',
       verification_status = case when decision = 'approved' then 'verified' else 'rejected' end,
-      verification_rejection_reason = case when decision = 'rejected' then trim(rejection_reason) else null end,
+      verification_rejection_reason = case
+        when decision = 'rejected' then trim(review_selfie_verification.rejection_reason)
+        else null
+      end,
       trust_score = case when decision = 'approved' then greatest(trust_score, 60) else trust_score end
   where id = target_user;
 end;
 $$;
 
-create or replace function public.accept_activity_request(request_id uuid)
+drop function if exists public.accept_activity_request(uuid);
+create function public.accept_activity_request(request_id uuid)
 returns uuid
 language plpgsql
 security definer
@@ -580,14 +605,16 @@ $$;
 drop function if exists public.calculate_profile_verification_status();
 drop function if exists public.submit_identity_verification(text, text, text, text);
 
-revoke all on function public.is_admin_user(uuid) from public;
-revoke all on function public.users_are_blocked(uuid, uuid) from public;
-revoke all on function public.is_verified_user(uuid) from public;
-revoke all on function public.sync_current_email_verification() from public;
-revoke all on function public.get_current_profile() from public;
-revoke all on function public.submit_selfie_verification(text) from public;
-revoke all on function public.review_selfie_verification(uuid, text, text) from public;
-revoke all on function public.accept_activity_request(uuid) from public;
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.is_admin_user(uuid) from public, anon, authenticated;
+revoke all on function public.users_are_blocked(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.is_verified_user(uuid) from public, anon, authenticated;
+revoke all on function public.sync_current_email_verification() from public, anon, authenticated;
+revoke all on function public.get_current_profile() from public, anon, authenticated;
+revoke all on function public.submit_selfie_verification(text) from public, anon, authenticated;
+revoke all on function public.review_selfie_verification(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.accept_activity_request(uuid) from public, anon, authenticated;
 grant execute on function public.is_admin_user(uuid) to authenticated;
 grant execute on function public.users_are_blocked(uuid, uuid) to authenticated;
 grant execute on function public.is_verified_user(uuid) to authenticated;
@@ -606,12 +633,16 @@ create index if not exists conversations_participant_idx on public.conversations
 create unique index if not exists conversations_parties_unique_idx
   on public.conversations(activity_id, host_id, participant_id);
 create index if not exists messages_conversation_idx on public.messages(conversation_id, created_at);
+create index if not exists messages_sender_idx on public.messages(sender_id);
 create index if not exists selfie_verifications_pending_idx on public.selfie_verifications(status, created_at);
+create index if not exists selfie_verifications_user_idx on public.selfie_verifications(user_id);
+create index if not exists selfie_verifications_reviewer_idx on public.selfie_verifications(reviewed_by);
 create index if not exists reports_reported_user_idx on public.reports(reported_user_id, created_at desc);
+create index if not exists reports_reporter_idx on public.reports(reporter_id);
+create index if not exists reports_activity_idx on public.reports(activity_id);
 create index if not exists blocks_blocked_user_idx on public.blocks(blocked_user_id);
 create index if not exists safety_checkins_issue_idx on public.safety_checkins(status, updated_at desc);
-create unique index if not exists safety_checkins_activity_user_unique_idx
-  on public.safety_checkins(activity_id, user_id);
+create index if not exists safety_checkins_user_idx on public.safety_checkins(user_id);
 
 do $$
 begin
