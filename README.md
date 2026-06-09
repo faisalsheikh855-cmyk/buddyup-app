@@ -99,6 +99,12 @@ Run the SQL files in this exact order using **Supabase Dashboard → SQL Editor 
 3. [`supabase/storage.sql`](supabase/storage.sql): public avatar and private selfie buckets with folder-scoped policies.
 4. [`supabase/seed.sql`](supabase/seed.sql): optional development examples only.
 
+For the fastest setup, run [`supabase/setup.sql`](supabase/setup.sql) once instead. It combines steps 1–3 in the correct order. Regenerate it after SQL changes with:
+
+```bash
+npm run build:supabase
+```
+
 Then:
 
 1. Copy `.env.example` to `.env.local`.

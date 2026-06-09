@@ -9,6 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "node scripts/write-runtime-env.mjs && expo export --platform web",
+    "build:supabase": "node scripts/build-supabase-setup.mjs",
     "test:backend": "node scripts/check-backend-contract.mjs",
     "lint": "eslint app src",
     "typecheck": "tsc --noEmit"

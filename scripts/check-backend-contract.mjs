@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const schema = readFileSync("supabase/schema.sql", "utf8");
 const rls = readFileSync("supabase/rls.sql", "utf8");
 const storage = readFileSync("supabase/storage.sql", "utf8");
+const setup = readFileSync("supabase/setup.sql", "utf8");
 const profileApi = readFileSync("src/features/profile/api.ts", "utf8");
 const activityApi = readFileSync("src/features/activities/api.ts", "utf8");
 const adminScreen = readFileSync("app/(app)/admin/verifications.tsx", "utf8");
@@ -58,6 +59,10 @@ for (const policy of requiredPolicies) {
 
 for (const bucket of ["avatars", "selfie-verifications"]) {
   if (!storage.includes(`'${bucket}'`)) failures.push(`Missing storage bucket: ${bucket}`);
+}
+
+for (const source of [schema, rls, storage]) {
+  if (!setup.includes(source.trim())) failures.push("supabase/setup.sql is stale; run npm run build:supabase");
 }
 
 if (!profileApi.includes('from("selfie_verifications")')) failures.push("Profile API is not connected to selfie_verifications");
