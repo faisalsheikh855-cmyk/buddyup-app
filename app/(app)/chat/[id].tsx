@@ -51,11 +51,11 @@ export default function ChatScreen() {
           <View className="h-10 w-10 items-center justify-center rounded-full bg-brand-soft"><Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.brand} /></View>
           <View className="min-w-0 flex-1">
             <Text className="text-[15px] font-bold text-ink">{activity?.title ?? "Activity chat"}</Text>
-            <Text className="text-[12px] text-muted">{activity ? `${activity.date_label}, ${activity.starts_at}` : "Confirm details with your buddy"}</Text>
+            <Text className="text-[12px] text-muted">{activity ? `${activity.activity_date ?? "Date to confirm"}, ${activity.activity_time?.slice(0, 5) ?? "time to confirm"}` : "Confirm details with your buddy"}</Text>
           </View>
         </View>
         <View className="m-4 rounded-app bg-brand-soft px-4 py-3">
-          <Text className="text-[13px] font-semibold text-brand">{activity ? `${activity.location}` : "Accepted members can use this chat to coordinate."}</Text>
+          <Text className="text-[13px] font-semibold text-brand">{activity ? `${activity.location_name ?? "Location to confirm"}` : "Accepted members can use this chat to coordinate."}</Text>
         </View>
 
         {conversationQuery.isLoading || messagesQuery.isLoading ? (

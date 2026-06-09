@@ -8,15 +8,13 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the route structure, data 
 
 ## Implemented
 
-- Expo Router root navigation with public/authenticated route groups and native tabs.
-- Swipeable Reanimated onboarding with bundled visual asset.
-- Native sign-up/login form using React Query mutations and persisted Supabase sessions.
-- No-key preview entry from auth so the navigation shell can be reviewed before backend setup.
-- Zustand ownership of local onboarding and session hydration state.
-- Initial authenticated navigation shell with feed, detail, chat, requests, profile, notifications and settings destinations.
-- Profile entry points for foreground location permission, camera capture and gallery selection.
-
-Activity publishing, server-backed feed/requests/chat, storage uploads and push notification registration are intentionally subsequent slices.
+- Supabase email authentication with persisted native/web sessions and automatic profile creation.
+- Public activity feed, verified-member activity creation, join requests and host decisions.
+- Accepted-request conversations with Row Level Security and Realtime message refresh.
+- Selfie-only MVP verification with private uploads and an admin approval dashboard.
+- Public avatars, profile editing, interests, trust badges and verification gating.
+- Reporting, blocking, public-meetup reminders and post-activity safety check-ins.
+- Light, dark and device appearance modes.
 
 ## Run
 
@@ -92,11 +90,52 @@ https://faisalsheikh855-cmyk.github.io/buddyup-app/
 
 The `EXPO_BASE_URL` value makes generated assets load under `/buddyup-app`. The `404.html` fallback lets direct links such as `/buddyup-app/auth` load the app, and `.nojekyll` ensures GitHub Pages serves Expo's generated assets normally.
 
-## Supabase
+## Supabase Production Setup
 
-1. Create a Supabase project and run `supabase/schema.sql` in its SQL editor.
-2. Copy `.env.example` to `.env.local`.
-3. Add `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. A legacy public anon key in `EXPO_PUBLIC_SUPABASE_ANON_KEY` is also accepted during migration.
-4. Configure authentication redirect/deep-link settings with the `buddyup` app scheme when adding external auth providers.
+Run the SQL files in this exact order using **Supabase Dashboard → SQL Editor → New query**:
 
-Without keys, use `Preview the app` on the authentication screen to explore the native UI. Real accounts and persisted authentication require Supabase configuration.
+1. [`supabase/schema.sql`](supabase/schema.sql): tables, compatibility upgrades, triggers, functions and indexes.
+2. [`supabase/rls.sql`](supabase/rls.sql): Row Level Security policies and restricted profile update privileges.
+3. [`supabase/storage.sql`](supabase/storage.sql): public avatar and private selfie buckets with folder-scoped policies.
+4. [`supabase/seed.sql`](supabase/seed.sql): optional development examples only.
+
+Then:
+
+1. Copy `.env.example` to `.env.local`.
+2. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+3. In Supabase **Authentication → URL Configuration**, set the production Site URL and add its `/auth` redirect URL.
+4. Create the first admin after that user has signed up:
+
+```sql
+update public.profiles
+set is_admin = true
+where id = (select id from auth.users where email = 'your-admin@email.com');
+```
+
+5. Sign out and back in. Admins can open **Settings → Selfie verification reviews**, or navigate to `/admin/verifications`.
+
+Do not put a service-role key in Expo, Netlify or any browser-accessible environment variable. Admin verification uses the authenticated `review_selfie_verification` database function, which checks `profiles.is_admin` server-side.
+
+### Netlify Backend Variables
+
+In **Netlify → Project configuration → Environment variables**, add:
+
+```text
+EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
+```
+
+Redeploy after changing variables. The build command is `npm run build:web` and the publish directory is `dist`.
+
+### Backend Smoke Test
+
+1. Sign up and confirm the email.
+2. Complete full name, username, city and interests.
+3. Upload an avatar.
+4. Take and submit a selfie; the profile becomes `pending`.
+5. Confirm creating and joining remain blocked.
+6. Approve the selfie from an admin account.
+7. Confirm the member becomes `verified` and can create an activity.
+8. Use a second verified account to request access.
+9. Accept the request and open the automatically created conversation.
+10. Send messages from both accounts, then test report, block and safety check-in actions.

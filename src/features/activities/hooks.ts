@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createActivity,
+  cancelActivity,
   getActivity,
   listActivities,
   listHostRequests,
@@ -32,6 +33,17 @@ export function useCreateActivity() {
   return useMutation({
     mutationFn: (draft: ActivityDraft) => createActivity(draft),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+    },
+  });
+}
+
+export function useCancelActivity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelActivity,
+    onSuccess: (activity) => {
+      queryClient.setQueryData(activityKeys.detail(activity.id), activity);
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
     },
   });

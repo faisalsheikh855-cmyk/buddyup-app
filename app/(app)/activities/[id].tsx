@@ -4,7 +4,7 @@ import { router, type Href, useLocalSearchParams } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Screen } from "@/components/ui/screen";
 import { TrustBadges } from "@/components/trust-badges";
-import { useActivity, useRequestToJoin } from "@/features/activities/hooks";
+import { useActivity, useCancelActivity, useRequestToJoin } from "@/features/activities/hooks";
 import { isProfileVerified } from "@/features/profile/api";
 import { useCurrentProfile } from "@/features/profile/hooks";
 import { nearbyActivities } from "@/features/activities/mock-data";
@@ -20,12 +20,13 @@ export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const activityQuery = useActivity(id);
   const joinMutation = useRequestToJoin();
+  const cancelMutation = useCancelActivity();
   const profileQuery = useCurrentProfile();
   const reportMutation = useReportUser();
   const blockMutation = useBlockUser();
   const checkinMutation = useSafetyCheckin();
   const activity = activityQuery.data;
-  const isHost = false;
+  const isHost = Boolean(activity && profileQuery.data?.id === activity.created_by);
   const hasRequested = Boolean(activity?.request_status);
 
   function requestJoin() {
@@ -35,6 +36,20 @@ export default function ActivityDetailScreen() {
       return;
     }
     joinMutation.mutate({ activityId: id });
+  }
+
+  function cancelPlan() {
+    if (!activity) return;
+    Alert.alert("Cancel this activity?", "People with requests will no longer be able to join.", [
+      { text: "Keep activity", style: "cancel" },
+      {
+        text: "Cancel activity",
+        style: "destructive",
+        onPress: () => cancelMutation.mutate(activity.id, {
+          onSuccess: () => Alert.alert("Activity cancelled", "This activity is now closed."),
+        }),
+      },
+    ]);
   }
 
   async function sharePlan() {
@@ -81,7 +96,7 @@ export default function ActivityDetailScreen() {
     ]);
   }
 
-  function checkIn(status: "safe" | "need_help") {
+  function checkIn(status: "safe" | "issue_reported") {
     if (!activity) return;
     checkinMutation.mutate(
       { activityId: activity.id, status },
@@ -179,7 +194,7 @@ export default function ActivityDetailScreen() {
                 <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-brand" onPress={() => checkIn("safe")}>
                   <Text className="text-[13px] font-bold text-white">I’m safe</Text>
                 </Pressable>
-                <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-coral-soft" onPress={() => checkIn("need_help")}>
+                <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-coral-soft" onPress={() => checkIn("issue_reported")}>
                   <Text className="text-[13px] font-bold text-[#A4483F]">I need help</Text>
                 </Pressable>
               </View>
@@ -191,15 +206,21 @@ export default function ActivityDetailScreen() {
               </View>
             ) : null}
 
-            <Button loading={joinMutation.isPending} disabled={isHost || hasRequested} onPress={requestJoin}>
-              {activity.request_status === "accepted"
-                ? "Accepted"
-                : activity.request_status === "pending"
-                  ? "Request pending"
-                  : activity.request_status === "declined"
-                    ? "Request declined"
-                    : "Request to join"}
-            </Button>
+            {isHost ? (
+              <Button variant="secondary" loading={cancelMutation.isPending} disabled={activity.status === "cancelled"} onPress={cancelPlan}>
+                {activity.status === "cancelled" ? "Activity cancelled" : "Cancel activity"}
+              </Button>
+            ) : (
+              <Button loading={joinMutation.isPending} disabled={hasRequested} onPress={requestJoin}>
+                {activity.request_status === "accepted"
+                  ? "Accepted"
+                  : activity.request_status === "pending"
+                    ? "Request pending"
+                    : activity.request_status === "declined"
+                      ? "Request declined"
+                      : "Request to join"}
+              </Button>
+            )}
           </>
         ) : null}
       </View>

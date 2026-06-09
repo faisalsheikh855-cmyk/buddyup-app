@@ -1,11 +1,12 @@
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Screen } from "@/components/ui/screen";
 import { useSignOut } from "@/features/auth/hooks";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useSessionStore } from "@/store/session-store";
+import { useCurrentProfile } from "@/features/profile/hooks";
 import { type ThemeMode, useTheme } from "@/theme/tokens";
 
 const themeOptions: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -20,6 +21,7 @@ export default function SettingsScreen() {
   const previewMode = useSessionStore((state) => state.previewMode);
   const stopPreview = useSessionStore((state) => state.stopPreview);
   const { colors, mode, setMode } = useTheme();
+  const profileQuery = useCurrentProfile();
 
   async function logout() {
     if (!previewMode && isSupabaseConfigured) {
@@ -66,6 +68,18 @@ export default function SettingsScreen() {
             </View>
           ))}
         </View>
+        {profileQuery.data?.is_admin ? (
+          <Pressable
+            className="mb-8 h-14 flex-row items-center justify-between rounded-app border border-line bg-surface px-4"
+            onPress={() => router.push("/(app)/admin/verifications" as Href)}
+          >
+            <View className="flex-row items-center gap-3">
+              <Ionicons name="shield-checkmark-outline" size={20} color={colors.brand} />
+              <Text className="text-[15px] font-bold text-ink">Selfie verification reviews</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+        ) : null}
         <Button variant="secondary" loading={signOutMutation.isPending} onPress={logout}>Log out</Button>
       </View>
     </Screen>

@@ -2,88 +2,104 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 export type VerificationStatus = "unverified" | "pending" | "verified" | "rejected";
-export type SelfieVerificationStatus = "not_started" | "pending" | "approved" | "rejected";
-export type DocumentType = "drivers_license" | "passport" | "national_id";
 
-export type Profile = {
+type ProfileRow = {
   id: string;
-  name: string;
-  age: number;
-  neighborhood: string;
+  full_name: string;
+  username: string | null;
+  city: string | null;
   bio: string | null;
-  interests: string[];
-  availability: string;
-  radius_km: number;
-  avatar: string | null;
-  photo_urls: string[];
+  avatar_url: string | null;
+  phone: string | null;
   email_verified: boolean;
-  phone_number: string | null;
   phone_verified: boolean;
-  selfie_verification_status: SelfieVerificationStatus;
+  selfie_verified: boolean;
   verification_status: VerificationStatus;
-  verification_submitted_at: string | null;
+  verification_rejection_reason: string | null;
+  interests: string[];
+  trust_score: number;
+  is_admin: boolean;
+  is_blocked: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Profile = ProfileRow & {
+  name: string;
+  neighborhood: string;
+  avatar: string | null;
+  phone_number: string | null;
+  selfie_verification_status: "not_started" | "pending" | "approved" | "rejected";
+  photo_urls: string[];
+};
+
+export type ProfileUpdate = {
+  full_name: string;
+  username: string | null;
+  city: string;
+  bio: string;
+  interests: string[];
+  phone: string | null;
+};
+
+export type SelfieVerification = {
+  id: string;
+  user_id: string;
+  selfie_url: string;
+  status: "pending" | "approved" | "rejected";
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
 };
 
-export type ProfileUpdate = Pick<
-  Profile,
-  "name" | "age" | "neighborhood" | "bio" | "interests" | "availability" | "radius_km" | "phone_number"
->;
-
-export type IdentitySubmission = {
-  documentType: DocumentType;
-  documentFrontUri: string;
-  documentBackUri?: string | null;
-  selfieUri: string;
+export type PendingSelfieVerification = SelfieVerification & {
+  signedSelfieUrl: string;
+  profile: Profile;
 };
 
-function normalizeProfile(profile: Partial<Profile> & Pick<Profile, "id">): Profile {
+function normalizeProfile(row: ProfileRow): Profile {
   return {
-    name: "BuddyUp user",
-    age: 18,
-    neighborhood: "Vancouver",
-    bio: "",
-    interests: [],
-    availability: "Flexible",
-    radius_km: 8,
-    avatar: null,
-    photo_urls: [],
-    email_verified: false,
-    phone_number: null,
-    phone_verified: false,
-    selfie_verification_status: "not_started",
-    verification_status: "unverified",
-    verification_submitted_at: null,
-    created_at: new Date(0).toISOString(),
-    ...profile,
+    ...row,
+    interests: row.interests ?? [],
+    name: row.full_name,
+    neighborhood: row.city ?? "",
+    avatar: row.avatar_url,
+    phone_number: row.phone,
+    selfie_verification_status: row.selfie_verified
+      ? "approved"
+      : row.verification_status === "pending"
+        ? "pending"
+        : row.verification_status === "rejected"
+          ? "rejected"
+          : "not_started",
+    photo_urls: row.avatar_url ? [row.avatar_url] : [],
   };
 }
 
-async function getSession() {
-  if (!supabase) throw new Error("Add your Supabase environment keys to enable profiles.");
+async function requireSession() {
+  if (!supabase) throw new Error("Supabase is not configured.");
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  if (!data.session) throw new Error("Sign in to manage your profile.");
+  if (!data.session) throw new Error("Sign in to continue.");
   return data.session;
 }
 
-function getFileDetails(uri: string, fallbackName: string) {
+function fileDetails(uri: string) {
   const cleanUri = uri.split("?")[0];
   const extension = cleanUri.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? "jpg";
-  const contentType =
-    extension === "png" ? "image/png" :
-    extension === "webp" ? "image/webp" :
-    "image/jpeg";
-  return { extension, contentType, fileName: `${fallbackName}.${extension}` };
+  return {
+    extension,
+    contentType: extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg",
+  };
 }
 
 async function uploadImage(bucket: string, path: string, uri: string) {
-  if (!supabase) throw new Error("Add your Supabase environment keys to upload photos.");
+  if (!supabase) throw new Error("Supabase is not configured.");
   const response = await fetch(uri);
   if (!response.ok) throw new Error("Could not read the selected image.");
-  const file = await response.arrayBuffer();
-  const { contentType } = getFileDetails(uri, path);
-  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+  const { contentType } = fileDetails(uri);
+  const { error } = await supabase.storage.from(bucket).upload(path, await response.arrayBuffer(), {
     contentType,
     upsert: true,
   });
@@ -91,171 +107,133 @@ async function uploadImage(bucket: string, path: string, uri: string) {
 }
 
 export async function ensureProfile(session: Session): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to enable profiles.");
-
-  const user = session.user;
-  await supabase.rpc("sync_current_email_verification").then(() => undefined);
-  const { data: existing, error: readError } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (readError) throw readError;
-  if (existing) return normalizeProfile(existing as Profile);
-
-  const fallbackName =
-    user.user_metadata?.name ??
-    user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ??
-    "BuddyUp user";
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .insert({
-      id: user.id,
-      name: fallbackName,
-      age: 18,
-      neighborhood: "Vancouver",
-      bio: "Ready to join local activities.",
-      interests: ["Tennis", "Badminton", "Chess"],
-      availability: "Flexible",
-      radius_km: 8,
-      email_verified: Boolean(user.email_confirmed_at),
-    })
-    .select("*")
-    .single();
-
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.rpc("get_current_profile").single();
   if (error) throw error;
-  return normalizeProfile(data as Profile);
+  return normalizeProfile(data as ProfileRow);
 }
 
 export async function getCurrentProfile(): Promise<Profile | null> {
   if (!supabase) return null;
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  if (!sessionData.session) return null;
-  return ensureProfile(sessionData.session);
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session ? ensureProfile(data.session) : null;
 }
 
 export async function updateCurrentProfile(update: ProfileUpdate): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to update profiles.");
-  const session = await getSession();
-  const { data, error } = await supabase
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await requireSession();
+  const { error } = await supabase
     .from("profiles")
     .update(update)
-    .eq("id", session.user.id)
-    .select("*")
-    .single();
+    .eq("id", session.user.id);
   if (error) throw error;
-  return normalizeProfile(data as Profile);
+  return ensureProfile(session);
 }
 
-export async function uploadProfilePhotos(uris: string[]): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to upload photos.");
-  const client = supabase;
-  if (uris.length < 5) throw new Error("Add at least 5 recent photos.");
-  const session = await getSession();
-  const urls = await Promise.all(
-    uris.map(async (uri, index) => {
-      const { fileName } = getFileDetails(uri, `profile-${index + 1}`);
-      const path = `${session.user.id}/${fileName}`;
-      await uploadImage("profile-photos", path, uri);
-      return client.storage.from("profile-photos").getPublicUrl(path).data.publicUrl;
-    }),
-  );
-
-  const { data, error } = await client
+export async function uploadAvatar(uri: string): Promise<Profile> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await requireSession();
+  const { extension } = fileDetails(uri);
+  const path = `${session.user.id}/avatar.${extension}`;
+  await uploadImage("avatars", path, uri);
+  const publicUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+  const { error } = await supabase
     .from("profiles")
-    .update({ photo_urls: urls, avatar: urls[0] })
-    .eq("id", session.user.id)
-    .select("*")
-    .single();
+    .update({ avatar_url: `${publicUrl}?v=${Date.now()}` })
+    .eq("id", session.user.id);
   if (error) throw error;
-  return normalizeProfile(data as Profile);
+  return ensureProfile(session);
 }
 
-export async function uploadPrimaryProfilePhoto(uri: string): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to upload photos.");
-  const session = await getSession();
-  const { fileName } = getFileDetails(uri, "primary-profile");
-  const path = `${session.user.id}/${fileName}`;
-  await uploadImage("profile-photos", path, uri);
-  const publicUrl = supabase.storage.from("profile-photos").getPublicUrl(path).data.publicUrl;
-  const current = await ensureProfile(session);
-  const photoUrls = [publicUrl, ...current.photo_urls.filter((url) => url !== publicUrl)];
+export async function submitSelfieVerification(uri: string): Promise<Profile> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await requireSession();
+  const { extension } = fileDetails(uri);
+  const path = `${session.user.id}/${Date.now()}.${extension}`;
+  await uploadImage("selfie-verifications", path, uri);
+  const { error } = await supabase.rpc("submit_selfie_verification", { selfie_path: path });
+  if (error) throw error;
+  return ensureProfile(session);
+}
+
+export async function getMySelfieVerification(): Promise<SelfieVerification | null> {
+  if (!supabase) return null;
+  const session = await requireSession();
   const { data, error } = await supabase
-    .from("profiles")
-    .update({ avatar: publicUrl, photo_urls: photoUrls })
-    .eq("id", session.user.id)
+    .from("selfie_verifications")
     .select("*")
-    .single();
+    .eq("user_id", session.user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (error) throw error;
-  return normalizeProfile(data as Profile);
+  return data as SelfieVerification | null;
 }
 
-export async function submitSelfieVerification(selfieUri: string): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to verify your selfie.");
-  const session = await getSession();
-  const { fileName } = getFileDetails(selfieUri, "verification-selfie");
-  const path = `${session.user.id}/${Date.now()}/${fileName}`;
-  await uploadImage("identity-documents", path, selfieUri);
-  const { error } = await supabase.rpc("submit_selfie_verification", {
-    p_selfie_path: path,
+export async function listPendingSelfieVerifications(): Promise<PendingSelfieVerification[]> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const client = supabase;
+  const { data, error } = await client
+    .from("selfie_verifications")
+    .select(`
+      *,
+      profile:profiles!selfie_verifications_user_id_fkey(
+        id, full_name, username, city, bio, avatar_url,
+        email_verified, phone_verified, selfie_verified, verification_status,
+        interests, trust_score, created_at, updated_at
+      )
+    `)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  return Promise.all((data ?? []).map(async (item) => {
+    const { data: signed, error: signError } = await client.storage
+      .from("selfie-verifications")
+      .createSignedUrl(item.selfie_url, 900);
+    if (signError) throw signError;
+    return {
+      ...(item as unknown as SelfieVerification),
+      profile: normalizeProfile(item.profile as ProfileRow),
+      signedSelfieUrl: signed.signedUrl,
+    };
+  }));
+}
+
+export async function reviewSelfieVerification({
+  verificationId,
+  decision,
+  rejectionReason,
+}: {
+  verificationId: string;
+  decision: "approved" | "rejected";
+  rejectionReason?: string;
+}) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.rpc("review_selfie_verification", {
+    verification_id: verificationId,
+    decision,
+    rejection_reason: rejectionReason ?? null,
   });
   if (error) throw error;
-  return ensureProfile(session);
-}
-
-export async function submitIdentityVerification(submission: IdentitySubmission): Promise<Profile> {
-  if (!supabase) throw new Error("Add your Supabase environment keys to verify identity.");
-  const session = await getSession();
-  const submissionId = `${Date.now()}`;
-  const front = getFileDetails(submission.documentFrontUri, "document-front");
-  const selfie = getFileDetails(submission.selfieUri, "selfie");
-  const frontPath = `${session.user.id}/${submissionId}/${front.fileName}`;
-  const selfiePath = `${session.user.id}/${submissionId}/${selfie.fileName}`;
-
-  await uploadImage("identity-documents", frontPath, submission.documentFrontUri);
-  await uploadImage("identity-documents", selfiePath, submission.selfieUri);
-
-  let backPath: string | null = null;
-  if (submission.documentBackUri) {
-    const back = getFileDetails(submission.documentBackUri, "document-back");
-    backPath = `${session.user.id}/${submissionId}/${back.fileName}`;
-    await uploadImage("identity-documents", backPath, submission.documentBackUri);
-  }
-
-  const { error: submissionError } = await supabase.rpc("submit_identity_verification", {
-    p_document_type: submission.documentType,
-    p_document_front_path: frontPath,
-    p_document_back_path: backPath,
-    p_selfie_path: selfiePath,
-  });
-  if (submissionError) throw submissionError;
-
-  return ensureProfile(session);
-}
-
-export function isProfileReady(profile: Profile | null | undefined) {
-  return isProfileVerified(profile);
 }
 
 export function isProfileVerified(profile: Profile | null | undefined) {
   return Boolean(
-    profile &&
-    profile.verification_status === "verified" &&
-    profile.email_verified &&
-    profile.phone_number?.trim() &&
-    profile.avatar?.trim() &&
-    profile.selfie_verification_status === "approved",
+    profile?.email_verified &&
+    profile.avatar_url &&
+    profile.selfie_verified &&
+    profile.verification_status === "verified",
   );
 }
+
+export const isProfileReady = isProfileVerified;
 
 export function getVerificationChecklist(profile: Profile | null | undefined) {
   return {
     email: Boolean(profile?.email_verified),
-    phone: Boolean(profile?.phone_number?.trim()),
-    photo: Boolean(profile?.avatar?.trim()),
-    selfie: profile?.selfie_verification_status === "approved",
+    photo: Boolean(profile?.avatar_url),
+    selfie: Boolean(profile?.selfie_verified),
   };
 }

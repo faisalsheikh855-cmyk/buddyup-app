@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { getCurrentProfile } from "@/features/profile/api";
+import { getCurrentProfile, isProfileVerified } from "@/features/profile/api";
 
 export type ConversationMessage = {
   id: string;
@@ -7,68 +7,68 @@ export type ConversationMessage = {
   sender_id: string;
   body: string;
   created_at: string;
+  read_at: string | null;
 };
 
 export type Conversation = {
   id: string;
   activity_id: string;
+  host_id: string;
+  participant_id: string;
   created_at: string;
   activity?: {
     id: string;
     title: string;
-    date_label: string;
-    starts_at: string;
-    location: string;
+    activity_date: string | null;
+    activity_time: string | null;
+    location_name: string | null;
   } | null;
 };
 
 function requireClient() {
-  if (!supabase) throw new Error("Add your Supabase environment keys to enable chat.");
+  if (!supabase) throw new Error("Supabase is not configured.");
   return supabase;
 }
 
 export async function getConversation(id: string): Promise<Conversation> {
-  const client = requireClient();
-  const { data, error } = await client
+  const { data, error } = await requireClient()
     .from("conversations")
-    .select(`
-      *,
-      activity:activities!conversations_activity_id_fkey(id, title, date_label, starts_at, location)
-    `)
+    .select("*, activity:activities!conversations_activity_id_fkey(id, title, activity_date, activity_time, location_name)")
     .eq("id", id)
     .single();
-
   if (error) throw error;
   return data as Conversation;
 }
 
+export async function listConversations(): Promise<Conversation[]> {
+  const { data, error } = await requireClient()
+    .from("conversations")
+    .select("*, activity:activities!conversations_activity_id_fkey(id, title, activity_date, activity_time, location_name)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Conversation[];
+}
+
 export async function listMessages(conversationId: string): Promise<ConversationMessage[]> {
-  const client = requireClient();
-  const { data, error } = await client
+  const { data, error } = await requireClient()
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
-
   if (error) throw error;
   return (data ?? []) as ConversationMessage[];
 }
 
-export async function sendMessage({ conversationId, body }: { conversationId: string; body: string }): Promise<ConversationMessage> {
+export async function sendMessage({ conversationId, body }: { conversationId: string; body: string }) {
   const client = requireClient();
   const profile = await getCurrentProfile();
   if (!profile) throw new Error("Sign in to send messages.");
-
+  if (!isProfileVerified(profile)) throw new Error("Verify your profile before sending messages.");
   const { data, error } = await client
     .from("messages")
-    .insert({
-      conversation_id: conversationId,
-      sender_id: profile.id,
-      body,
-    })
+    .insert({ conversation_id: conversationId, sender_id: profile.id, body: body.trim() })
     .select("*")
     .single();
-
   if (error) throw error;
   return data as ConversationMessage;
 }

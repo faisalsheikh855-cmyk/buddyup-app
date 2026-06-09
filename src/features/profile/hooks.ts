@@ -1,51 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getCurrentProfile,
+  getMySelfieVerification,
+  listPendingSelfieVerifications,
+  reviewSelfieVerification,
   submitSelfieVerification,
-  submitIdentityVerification,
   updateCurrentProfile,
-  uploadPrimaryProfilePhoto,
-  uploadProfilePhotos,
+  uploadAvatar,
 } from "./api";
 
 export const profileKeys = {
   current: ["profile", "current"] as const,
+  selfie: ["profile", "selfie-verification"] as const,
+  pendingVerifications: ["admin", "selfie-verifications", "pending"] as const,
 };
 
 export function useCurrentProfile() {
-  return useQuery({
-    queryKey: profileKeys.current,
-    queryFn: getCurrentProfile,
-  });
+  return useQuery({ queryKey: profileKeys.current, queryFn: getCurrentProfile });
 }
 
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateCurrentProfile,
-    onSuccess: (profile) => {
-      queryClient.setQueryData(profileKeys.current, profile);
-    },
+    onSuccess: (profile) => queryClient.setQueryData(profileKeys.current, profile),
   });
 }
 
-export function useUploadProfilePhotos() {
+export function useUploadAvatar() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: uploadProfilePhotos,
-    onSuccess: (profile) => {
-      queryClient.setQueryData(profileKeys.current, profile);
-    },
-  });
-}
-
-export function useUploadPrimaryProfilePhoto() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: uploadPrimaryProfilePhoto,
-    onSuccess: (profile) => {
-      queryClient.setQueryData(profileKeys.current, profile);
-    },
+    mutationFn: uploadAvatar,
+    onSuccess: (profile) => queryClient.setQueryData(profileKeys.current, profile),
   });
 }
 
@@ -55,16 +41,29 @@ export function useSubmitSelfieVerification() {
     mutationFn: submitSelfieVerification,
     onSuccess: (profile) => {
       queryClient.setQueryData(profileKeys.current, profile);
+      void queryClient.invalidateQueries({ queryKey: profileKeys.selfie });
     },
   });
 }
 
-export function useSubmitIdentityVerification() {
+export function useMySelfieVerification() {
+  return useQuery({ queryKey: profileKeys.selfie, queryFn: getMySelfieVerification });
+}
+
+export function usePendingSelfieVerifications(enabled: boolean) {
+  return useQuery({
+    queryKey: profileKeys.pendingVerifications,
+    queryFn: listPendingSelfieVerifications,
+    enabled,
+  });
+}
+
+export function useReviewSelfieVerification() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: submitIdentityVerification,
-    onSuccess: (profile) => {
-      queryClient.setQueryData(profileKeys.current, profile);
+    mutationFn: reviewSelfieVerification,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: profileKeys.pendingVerifications });
     },
   });
 }

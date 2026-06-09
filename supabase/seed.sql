@@ -1,0 +1,20 @@
+-- Optional development seed.
+-- Create test users through Supabase Auth first, then replace the UUIDs below.
+-- Never run test-user inserts against production without reviewing the values.
+
+-- Example:
+-- insert into public.activities (
+--   created_by, title, description, category, city, location_name,
+--   activity_date, activity_time, max_people
+-- )
+-- values (
+--   '00000000-0000-0000-0000-000000000000',
+--   'Beginner badminton',
+--   'Friendly doubles at a public community centre.',
+--   'Badminton',
+--   'Vancouver',
+--   'Roundhouse Community Centre',
+--   current_date + 1,
+--   '18:30',
+--   4
+-- );

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Header } from "@/components/ui/header";
 import { Screen } from "@/components/ui/screen";
 import { useHostRequests, useRespondToRequest } from "@/features/activities/hooks";
+import { useConversations } from "@/features/chat/hooks";
 import type { ActivityRequest } from "@/features/activities/api";
 import { useThemeColors } from "@/theme/tokens";
 
@@ -39,6 +40,7 @@ function RequestCard({ request, onRespond, pending }: { request: ActivityRequest
 export default function RequestsScreen() {
   const colors = useThemeColors();
   const requestsQuery = useHostRequests();
+  const conversationsQuery = useConversations();
   const respondMutation = useRespondToRequest();
   const requests = requestsQuery.data ?? [];
 
@@ -46,6 +48,30 @@ export default function RequestsScreen() {
     <Screen>
       <View className="pt-4">
         <Header title="Requests" subtitle="People ready to join your plans" />
+
+        {(conversationsQuery.data?.length ?? 0) > 0 ? (
+          <View className="mb-5">
+            <Text className="mb-3 text-[18px] font-extrabold text-ink">Your activity chats</Text>
+            <View className="gap-2">
+              {conversationsQuery.data?.map((conversation) => (
+                <Pressable
+                  key={conversation.id}
+                  className="flex-row items-center rounded-[18px] border border-line bg-surface p-4"
+                  onPress={() => router.push(`/(app)/chat/${conversation.id}`)}
+                >
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-brand-soft">
+                    <Ionicons name="chatbubble-ellipses-outline" size={19} color={colors.brand} />
+                  </View>
+                  <View className="ml-3 min-w-0 flex-1">
+                    <Text className="text-[14px] font-extrabold text-ink">{conversation.activity?.title ?? "Activity chat"}</Text>
+                    <Text className="mt-1 text-[11px] text-muted">Accepted members only</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {requestsQuery.isLoading ? (
           <View className="rounded-[22px] border border-line bg-surface p-8">

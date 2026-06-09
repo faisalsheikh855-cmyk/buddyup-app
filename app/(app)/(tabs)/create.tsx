@@ -40,11 +40,11 @@ export default function CreateActivityScreen() {
       {
         title: title.trim(),
         category: activity,
-        location: location.trim(),
-        dateLabel,
-        startsAt: startsAt.trim(),
-        spots: Number(spots),
-        pace: level,
+        city: profileQuery.data?.city ?? "Vancouver",
+        locationName: location.trim(),
+        activityDate: dateForLabel(dateLabel),
+        activityTime: timeForDatabase(startsAt),
+        maxPeople: Number(spots),
         description: description.trim() || "Friendly activity. Request to join and confirm details with the host.",
       },
       {
@@ -170,4 +170,29 @@ export default function CreateActivityScreen() {
       </View>
     </Screen>
   );
+}
+
+function dateForLabel(label: string) {
+  const date = new Date();
+  if (label === "Tomorrow") date.setDate(date.getDate() + 1);
+  if (label === "Friday") {
+    const days = (5 - date.getDay() + 7) % 7 || 7;
+    date.setDate(date.getDate() + days);
+  }
+  if (label === "This weekend") {
+    const days = (6 - date.getDay() + 7) % 7 || 7;
+    date.setDate(date.getDate() + days);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function timeForDatabase(value: string) {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return "18:30";
+  let hour = Number(match[1]);
+  const minute = match[2] ?? "00";
+  const period = match[3]?.toUpperCase();
+  if (period === "PM" && hour < 12) hour += 12;
+  if (period === "AM" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${minute}`;
 }

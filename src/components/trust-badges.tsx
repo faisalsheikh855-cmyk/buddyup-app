@@ -6,7 +6,7 @@ import { useThemeColors } from "@/theme/tokens";
 type TrustBadgesProps = {
   profile?: Pick<
     Profile,
-    "email_verified" | "phone_number" | "avatar" | "selfie_verification_status" | "verification_status"
+    "email_verified" | "phone_verified" | "avatar_url" | "selfie_verified" | "verification_status"
   > | null;
   compact?: boolean;
   showPlaceholder?: boolean;
@@ -15,8 +15,8 @@ type TrustBadgesProps = {
 const badges = [
   { key: "email", label: "Email verified", icon: "mail-outline" as const },
   { key: "phone", label: "Phone verified", icon: "call-outline" as const },
-  { key: "photo", label: "Photo verified", icon: "camera-outline" as const },
-  { key: "id", label: "ID verified", icon: "card-outline" as const },
+  { key: "photo", label: "Profile photo", icon: "camera-outline" as const },
+  { key: "selfie", label: "Selfie Verified", icon: "scan-outline" as const },
   { key: "host", label: "Trusted host", icon: "shield-checkmark-outline" as const },
 ];
 
@@ -24,9 +24,9 @@ export function TrustBadges({ profile, compact = false, showPlaceholder = true }
   const colors = useThemeColors();
   const active = {
     email: Boolean(profile?.email_verified),
-    phone: Boolean(profile?.phone_number?.trim()),
-    photo: Boolean(profile?.avatar?.trim() && profile?.selfie_verification_status === "approved"),
-    id: false,
+    phone: Boolean(profile?.phone_verified),
+    photo: Boolean(profile?.avatar_url),
+    selfie: Boolean(profile?.selfie_verified),
     host: profile?.verification_status === "verified",
   };
 
@@ -48,7 +48,7 @@ export function TrustBadges({ profile, compact = false, showPlaceholder = true }
               color={isActive ? colors.brand : colors.muted}
             />
             <Text className={`${compact ? "text-[9px]" : "text-[11px]"} font-bold ${isActive ? "text-brand" : "text-muted"}`}>
-              {badge.label}{badge.key === "id" && !isActive ? " soon" : ""}
+              {badge.label}
             </Text>
           </View>
         );
