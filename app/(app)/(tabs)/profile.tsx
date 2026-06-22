@@ -7,8 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Header } from "@/components/ui/header";
 import { Screen } from "@/components/ui/screen";
 import { TrustBadges } from "@/components/trust-badges";
-import { useCurrentProfile, useUpdateProfile, useUploadAvatar } from "@/features/profile/hooks";
+import {
+  useCurrentProfile,
+  useDeleteProfilePhoto,
+  useProfilePhotos,
+  useUpdateProfile,
+  useUploadAvatar,
+  useUploadProfilePhoto,
+} from "@/features/profile/hooks";
 import { useThemeColors } from "@/theme/tokens";
+import { prepareImage } from "@/lib/media";
 
 const interestOptions = [
   "Badminton", "Tennis", "Gym", "Shopping", "Soccer", "Pickleball",
@@ -21,13 +29,17 @@ export default function ProfileScreen() {
   const updateProfile = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
   const profile = profileQuery.data;
+  const photosQuery = useProfilePhotos(profile?.id);
+  const uploadPhoto = useUploadProfilePhoto(profile?.id);
+  const deletePhoto = useDeleteProfilePhoto(profile?.id);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [city, setCity] = useState("");
   const [bio, setBio] = useState("");
   const [phone, setPhone] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [avatarAsset, setAvatarAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [galleryAsset, setGalleryAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -48,18 +60,58 @@ export default function ProfileScreen() {
       aspect: [1, 1],
       quality: 0.85,
     });
-    if (!result.canceled) setAvatarUri(result.assets[0].uri);
+    if (!result.canceled) setAvatarAsset(result.assets[0]);
   }
 
   async function saveAvatar() {
-    if (!avatarUri) return;
+    if (!avatarAsset) return;
     try {
-      await uploadAvatar.mutateAsync(avatarUri);
-      setAvatarUri(null);
+      const image = await prepareImage(avatarAsset, 1200);
+      await uploadAvatar.mutateAsync(image);
+      setAvatarAsset(null);
       Alert.alert("Photo updated", "Your profile photo is now live.");
     } catch (error) {
       Alert.alert("Could not update photo", error instanceof Error ? error.message : "Try again.");
     }
+  }
+
+  async function chooseGalleryPhoto() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return Alert.alert("Photos permission needed", "Allow photo access to add a recent profile photo.");
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.85,
+    });
+    if (!result.canceled) setGalleryAsset(result.assets[0]);
+  }
+
+  async function saveGalleryPhoto() {
+    if (!galleryAsset) return;
+    try {
+      const image = await prepareImage(galleryAsset, 1600);
+      await uploadPhoto.mutateAsync(image);
+      setGalleryAsset(null);
+      Alert.alert("Photo added", "Your profile gallery has been updated.");
+    } catch (error) {
+      Alert.alert("Could not add photo", error instanceof Error ? error.message : "Try again.");
+    }
+  }
+
+  function removeGalleryPhoto(photo: NonNullable<typeof photosQuery.data>[number]) {
+    Alert.alert("Remove this photo?", "It will no longer appear on your profile.", [
+      { text: "Keep photo", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => deletePhoto.mutate(photo, {
+          onError: (error) => Alert.alert("Could not remove photo", error.message),
+        }),
+      },
+    ]);
   }
 
   async function saveProfile() {
@@ -109,15 +161,15 @@ export default function ProfileScreen() {
 
         <View className="mb-8 items-center">
           <Pressable className="h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-brand-soft" onPress={chooseAvatar}>
-            {avatarUri || profile?.avatar_url ? (
-              <Image source={{ uri: avatarUri ?? profile?.avatar_url ?? "" }} className="h-full w-full" />
+            {avatarAsset?.uri || profile?.avatar_url ? (
+              <Image source={{ uri: avatarAsset?.uri ?? profile?.avatar_url ?? "" }} className="h-full w-full" />
             ) : (
               <Ionicons name="camera-outline" size={30} color={colors.brand} />
             )}
           </Pressable>
           <View className="mt-4 flex-row gap-3">
             <Button variant="secondary" onPress={chooseAvatar}>Choose photo</Button>
-            {avatarUri ? <Button loading={uploadAvatar.isPending} onPress={saveAvatar}>Upload</Button> : null}
+            {avatarAsset ? <Button loading={uploadAvatar.isPending} onPress={saveAvatar}>Upload</Button> : null}
           </View>
         </View>
 
@@ -139,6 +191,51 @@ export default function ProfileScreen() {
           {profile?.verification_status !== "verified" ? (
             <View className="mt-4">
               <Button onPress={() => router.push("/verification" as Href)}>Open verification</Button>
+            </View>
+          ) : null}
+        </View>
+
+        <View className="mb-8">
+          <View className="mb-3 flex-row items-end justify-between">
+            <View className="min-w-0 flex-1 pr-3">
+              <Text className="text-[20px] font-extrabold text-ink">Recent photos</Text>
+              <Text className="mt-1 text-[12px] leading-5 text-muted">
+                Add 4–6 current photos so activity partners can recognize you.
+              </Text>
+            </View>
+            <Text className="text-[12px] font-bold text-muted">{photosQuery.data?.length ?? 0}/6</Text>
+          </View>
+          <View className="flex-row flex-wrap gap-2">
+            {photosQuery.data?.map((photo) => (
+              <View key={photo.id} className="relative h-28 w-[31%] overflow-hidden rounded-app bg-line">
+                <Image source={{ uri: photo.photo_url }} className="h-full w-full" />
+                <Pressable
+                  accessibilityLabel="Remove profile photo"
+                  className="absolute right-1.5 top-1.5 h-8 w-8 items-center justify-center rounded-full bg-black/60"
+                  onPress={() => removeGalleryPhoto(photo)}
+                >
+                  <Ionicons name="close" size={17} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            ))}
+            {(photosQuery.data?.length ?? 0) < 6 ? (
+              <Pressable
+                className="h-28 w-[31%] items-center justify-center rounded-app border border-dashed border-line bg-surface"
+                onPress={chooseGalleryPhoto}
+              >
+                <Ionicons name="add" size={25} color={colors.brand} />
+                <Text className="mt-1 text-[11px] font-bold text-brand">Add photo</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {galleryAsset ? (
+            <View className="mt-3 flex-row items-center gap-3 rounded-app border border-line bg-surface p-3">
+              <Image source={{ uri: galleryAsset.uri }} className="h-16 w-16 rounded-app" />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[13px] font-bold text-ink">Ready to add</Text>
+                <Text className="mt-1 text-[11px] text-muted">Photos are resized before upload.</Text>
+              </View>
+              <Button loading={uploadPhoto.isPending} onPress={saveGalleryPhoto}>Upload</Button>
             </View>
           ) : null}
         </View>

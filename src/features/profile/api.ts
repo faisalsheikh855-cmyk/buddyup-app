@@ -1,5 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import type { PreparedImage } from "@/lib/media";
 
 export type VerificationStatus = "unverified" | "pending" | "verified" | "rejected";
 
@@ -58,6 +59,15 @@ export type PendingSelfieVerification = SelfieVerification & {
   profile: Profile;
 };
 
+export type ProfilePhoto = {
+  id: string;
+  user_id: string;
+  photo_url: string;
+  storage_path: string;
+  position: number;
+  created_at: string;
+};
+
 function normalizeProfile(row: ProfileRow): Profile {
   return {
     ...row,
@@ -85,22 +95,11 @@ async function requireSession() {
   return data.session;
 }
 
-function fileDetails(uri: string) {
-  const cleanUri = uri.split("?")[0];
-  const extension = cleanUri.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? "jpg";
-  return {
-    extension,
-    contentType: extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg",
-  };
-}
-
-async function uploadImage(bucket: string, path: string, uri: string) {
+async function uploadImage(bucket: string, path: string, image: PreparedImage) {
   if (!supabase) throw new Error("Supabase is not configured.");
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error("Could not read the selected image.");
-  const { contentType } = fileDetails(uri);
-  const { error } = await supabase.storage.from(bucket).upload(path, await response.arrayBuffer(), {
-    contentType,
+  const { error } = await supabase.storage.from(bucket).upload(path, image.bytes, {
+    contentType: image.contentType,
+    cacheControl: "3600",
     upsert: true,
   });
   if (error) throw error;
@@ -120,6 +119,27 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   return data.session ? ensureProfile(data.session) : null;
 }
 
+export async function getProfileById(id: string): Promise<Profile> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(`
+      id, full_name, username, city, bio, avatar_url,
+      email_verified, phone_verified, selfie_verified, verification_status,
+      interests, trust_score, created_at, updated_at
+    `)
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return normalizeProfile({
+    ...data,
+    phone: null,
+    verification_rejection_reason: null,
+    is_admin: false,
+    is_blocked: false,
+  } as ProfileRow);
+}
+
 export async function updateCurrentProfile(update: ProfileUpdate): Promise<Profile> {
   if (!supabase) throw new Error("Supabase is not configured.");
   const session = await requireSession();
@@ -131,12 +151,11 @@ export async function updateCurrentProfile(update: ProfileUpdate): Promise<Profi
   return ensureProfile(session);
 }
 
-export async function uploadAvatar(uri: string): Promise<Profile> {
+export async function uploadAvatar(image: PreparedImage): Promise<Profile> {
   if (!supabase) throw new Error("Supabase is not configured.");
   const session = await requireSession();
-  const { extension } = fileDetails(uri);
-  const path = `${session.user.id}/avatar.${extension}`;
-  await uploadImage("avatars", path, uri);
+  const path = `${session.user.id}/avatar.${image.extension}`;
+  await uploadImage("avatars", path, image);
   const publicUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
   const { error } = await supabase
     .from("profiles")
@@ -146,14 +165,73 @@ export async function uploadAvatar(uri: string): Promise<Profile> {
   return ensureProfile(session);
 }
 
-export async function submitSelfieVerification(uri: string): Promise<Profile> {
+export async function listProfilePhotos(userId?: string): Promise<ProfilePhoto[]> {
+  if (!supabase) return [];
+  const session = await requireSession();
+  const { data, error } = await supabase
+    .from("profile_photos")
+    .select("*")
+    .eq("user_id", userId ?? session.user.id)
+    .order("position", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ProfilePhoto[];
+}
+
+export async function uploadProfilePhoto(image: PreparedImage): Promise<ProfilePhoto> {
   if (!supabase) throw new Error("Supabase is not configured.");
   const session = await requireSession();
-  const { extension } = fileDetails(uri);
-  const path = `${session.user.id}/${Date.now()}.${extension}`;
-  await uploadImage("selfie-verifications", path, uri);
-  const { error } = await supabase.rpc("submit_selfie_verification", { selfie_path: path });
+  const { data: existing, error: existingError } = await supabase
+    .from("profile_photos")
+    .select("position")
+    .eq("user_id", session.user.id)
+    .order("position");
+  if (existingError) throw existingError;
+  if ((existing?.length ?? 0) >= 6) throw new Error("You can add up to 6 profile photos.");
+
+  const used = new Set((existing ?? []).map((photo) => photo.position));
+  const position = Array.from({ length: 6 }, (_, index) => index).find((index) => !used.has(index));
+  if (position === undefined) throw new Error("You can add up to 6 profile photos.");
+
+  const path = `${session.user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  await uploadImage("profile-photos", path, image);
+  const photoUrl = supabase.storage.from("profile-photos").getPublicUrl(path).data.publicUrl;
+  const { data, error } = await supabase
+    .from("profile_photos")
+    .insert({
+      user_id: session.user.id,
+      photo_url: photoUrl,
+      storage_path: path,
+      position,
+    })
+    .select("*")
+    .single();
+  if (error) {
+    await supabase.storage.from("profile-photos").remove([path]);
+    throw error;
+  }
+  return data as ProfilePhoto;
+}
+
+export async function deleteProfilePhoto(photo: ProfilePhoto) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await requireSession();
+  if (photo.user_id !== session.user.id) throw new Error("You can only delete your own photos.");
+  const { error } = await supabase.from("profile_photos").delete().eq("id", photo.id);
   if (error) throw error;
+  const { error: storageError } = await supabase.storage.from("profile-photos").remove([photo.storage_path]);
+  if (storageError) throw storageError;
+}
+
+export async function submitSelfieVerification(image: PreparedImage): Promise<Profile> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await requireSession();
+  const path = `${session.user.id}/${Date.now()}.${image.extension}`;
+  await uploadImage("selfie-verifications", path, image);
+  const { error } = await supabase.rpc("submit_selfie_verification", { selfie_path: path });
+  if (error) {
+    await supabase.storage.from("selfie-verifications").remove([path]);
+    throw error;
+  }
   return ensureProfile(session);
 }
 

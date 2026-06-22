@@ -1,9 +1,15 @@
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Header } from "@/components/ui/header";
 import { Screen } from "@/components/ui/screen";
-import { useHostRequests, useRespondToRequest } from "@/features/activities/hooks";
+import {
+  useCancelJoinRequest,
+  useHostRequests,
+  useMyRequests,
+  useRespondToRequest,
+} from "@/features/activities/hooks";
 import { useConversations } from "@/features/chat/hooks";
 import type { ActivityRequest } from "@/features/activities/api";
 import { useThemeColors } from "@/theme/tokens";
@@ -37,17 +43,80 @@ function RequestCard({ request, onRespond, pending }: { request: ActivityRequest
   );
 }
 
+function SentRequestCard({
+  request,
+  onCancel,
+  pending,
+}: {
+  request: ActivityRequest;
+  onCancel: () => void;
+  pending: boolean;
+}) {
+  return (
+    <Pressable
+      className="rounded-[22px] border border-line bg-surface p-4"
+      onPress={() => request.activity?.id && router.push(`/(app)/activities/${request.activity.id}`)}
+    >
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="min-w-0 flex-1">
+          <Text className="text-[16px] font-extrabold text-ink">{request.activity?.title ?? "Activity"}</Text>
+          <Text className="mt-1 text-[12px] leading-5 text-muted">
+            {request.activity?.date_label}, {request.activity?.starts_at} · {request.activity?.location}
+          </Text>
+        </View>
+        <View className={`rounded-full px-3 py-1.5 ${request.status === "accepted" ? "bg-brand-soft" : "bg-line"}`}>
+          <Text className={`text-[11px] font-extrabold ${request.status === "accepted" ? "text-brand" : "text-muted"}`}>
+            {request.status}
+          </Text>
+        </View>
+      </View>
+      {request.status === "pending" ? (
+        <Pressable
+          disabled={pending}
+          className="mt-4 h-11 items-center justify-center rounded-full border border-line"
+          onPress={(event) => {
+            event.stopPropagation();
+            onCancel();
+          }}
+        >
+          <Text className="text-[13px] font-bold text-muted">Cancel request</Text>
+        </Pressable>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export default function RequestsScreen() {
   const colors = useThemeColors();
   const requestsQuery = useHostRequests();
+  const myRequestsQuery = useMyRequests();
   const conversationsQuery = useConversations();
   const respondMutation = useRespondToRequest();
+  const cancelMutation = useCancelJoinRequest();
+  const [view, setView] = useState<"incoming" | "sent">("incoming");
   const requests = requestsQuery.data ?? [];
+  const myRequests = myRequestsQuery.data ?? [];
+  const activeQuery = view === "incoming" ? requestsQuery : myRequestsQuery;
+  const activeItems = view === "incoming" ? requests : myRequests;
 
   return (
     <Screen>
       <View className="pt-4">
         <Header title="Requests" subtitle="People ready to join your plans" />
+
+        <View className="mb-5 flex-row rounded-app bg-line p-1">
+          {(["incoming", "sent"] as const).map((item) => (
+            <Pressable
+              key={item}
+              className={`h-11 flex-1 items-center justify-center rounded-md ${view === item ? "bg-surface" : ""}`}
+              onPress={() => setView(item)}
+            >
+              <Text className={`text-[13px] font-bold ${view === item ? "text-ink" : "text-muted"}`}>
+                {item === "incoming" ? `Incoming (${requests.length})` : `Sent (${myRequests.length})`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
         {(conversationsQuery.data?.length ?? 0) > 0 ? (
           <View className="mb-5">
@@ -73,27 +142,33 @@ export default function RequestsScreen() {
           </View>
         ) : null}
 
-        {requestsQuery.isLoading ? (
+        {activeQuery.isLoading ? (
           <View className="rounded-[22px] border border-line bg-surface p-8">
             <ActivityIndicator color={colors.brand} />
             <Text className="mt-3 text-center text-[14px] font-semibold text-muted">Loading requests...</Text>
           </View>
         ) : null}
 
-        {requestsQuery.error ? (
+        {activeQuery.error ? (
           <View className="rounded-[22px] bg-coral-soft p-4">
             <Text className="text-[13px] font-bold text-[#A4483F]">Could not load join requests. Make sure the Supabase schema has been applied.</Text>
           </View>
         ) : null}
 
-        {!requestsQuery.isLoading && !requestsQuery.error && requests.length === 0 ? (
+        {!activeQuery.isLoading && !activeQuery.error && activeItems.length === 0 ? (
           <>
             <View className="rounded-[22px] border border-line bg-surface px-5 py-10">
               <View className="mx-auto mb-4 h-14 w-14 items-center justify-center rounded-full bg-brand-soft">
                 <Ionicons name="people-outline" size={25} color={colors.brand} />
               </View>
-              <Text className="text-center text-[18px] font-extrabold text-ink">No join requests yet</Text>
-              <Text className="mt-2 text-center text-[14px] leading-5 text-muted">When someone wants to play tennis, chess, badminton, or another plan you host, they will show up here.</Text>
+              <Text className="text-center text-[18px] font-extrabold text-ink">
+                {view === "incoming" ? "No join requests yet" : "No sent requests"}
+              </Text>
+              <Text className="mt-2 text-center text-[14px] leading-5 text-muted">
+                {view === "incoming"
+                  ? "When someone requests one of your plans, they will show up here."
+                  : "Activities you request to join will appear here with their current status."}
+              </Text>
             </View>
             <View className="mt-4 rounded-[20px] bg-ink p-4">
               <Text className="text-[15px] font-extrabold text-white">Tip</Text>
@@ -102,12 +177,13 @@ export default function RequestsScreen() {
           </>
         ) : null}
 
-        <View className="gap-3">
-          {requests.map((request) => (
+        {view === "incoming" ? (
+          <View className="gap-3">
+            {requests.map((request) => (
             <RequestCard
               key={request.id}
               request={request}
-              pending={respondMutation.isPending}
+              pending={respondMutation.isPending && respondMutation.variables?.requestId === request.id}
               onRespond={(status) => respondMutation.mutate(
                 { requestId: request.id, status },
                 {
@@ -117,8 +193,29 @@ export default function RequestsScreen() {
                 },
               )}
             />
-          ))}
-        </View>
+            ))}
+          </View>
+        ) : (
+          <View className="gap-3">
+            {myRequests.map((request) => (
+              <SentRequestCard
+                key={request.id}
+                request={request}
+                pending={cancelMutation.isPending && cancelMutation.variables === request.id}
+                onCancel={() => Alert.alert("Cancel this request?", "The host will no longer see it as pending.", [
+                  { text: "Keep request", style: "cancel" },
+                  {
+                    text: "Cancel request",
+                    style: "destructive",
+                    onPress: () => cancelMutation.mutate(request.id, {
+                      onError: (error) => Alert.alert("Could not cancel request", error.message),
+                    }),
+                  },
+                ])}
+              />
+            ))}
+          </View>
+        )}
       </View>
     </Screen>
   );

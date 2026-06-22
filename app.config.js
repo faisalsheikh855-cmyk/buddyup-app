@@ -4,41 +4,48 @@ export default {
   expo: {
     name: "BuddyUp",
     slug: "buddyup",
-    version: "0.1.0",
+    version: "1.0.0",
+    icon: "./assets/images/app-icon.png",
     orientation: "portrait",
     scheme: "buddyup",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     web: {
       output: "static",
+      favicon: "./assets/images/app-icon.png",
     },
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.buddyup.mobile",
+      buildNumber: "1",
+      infoPlist: {
+        NSPhotoLibraryUsageDescription: "BuddyUp lets you choose current photos for your profile.",
+        NSCameraUsageDescription: "BuddyUp uses the camera for your private selfie verification.",
+      },
     },
     android: {
       package: "com.buddyup.mobile",
+      versionCode: 1,
       adaptiveIcon: {
-        backgroundColor: "#087F63",
+        foregroundImage: "./assets/images/app-icon.png",
+        backgroundColor: "#062B22",
       },
+    },
+    splash: {
+      image: "./assets/images/app-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#F7F8F5",
     },
     plugins: [
       "expo-router",
       [
-        "expo-location",
-        {
-          locationWhenInUsePermission: "BuddyUp uses your location to show nearby activity partners.",
-        },
-      ],
-      [
         "expo-image-picker",
         {
-          photosPermission: "BuddyUp lets you choose photos for your profile and activities.",
-          cameraPermission: "BuddyUp uses your camera for profile and activity photos.",
+          photosPermission: "BuddyUp lets you choose current photos for your profile.",
+          cameraPermission: "BuddyUp uses your camera for private selfie verification.",
           microphonePermission: false,
         },
       ],
-      "expo-notifications",
     ],
     experiments: {
       baseUrl,

@@ -5,8 +5,11 @@ import {
   getActivity,
   listActivities,
   listHostRequests,
+  listMyRequests,
+  cancelJoinRequest,
   requestToJoin,
   respondToRequest,
+  updateActivity,
   type ActivityDraft,
 } from "./api";
 
@@ -14,6 +17,7 @@ export const activityKeys = {
   all: ["activities"] as const,
   detail: (id: string) => ["activities", id] as const,
   hostRequests: ["activity-requests", "host"] as const,
+  myRequests: ["activity-requests", "mine"] as const,
 };
 
 export function useActivities() {
@@ -49,6 +53,17 @@ export function useCancelActivity() {
   });
 }
 
+export function useUpdateActivity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateActivity,
+    onSuccess: (activity) => {
+      queryClient.setQueryData(activityKeys.detail(activity.id), activity);
+      void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+    },
+  });
+}
+
 export function useRequestToJoin() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -64,12 +79,28 @@ export function useHostRequests() {
   return useQuery({ queryKey: activityKeys.hostRequests, queryFn: listHostRequests });
 }
 
+export function useMyRequests() {
+  return useQuery({ queryKey: activityKeys.myRequests, queryFn: listMyRequests });
+}
+
+export function useCancelJoinRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelJoinRequest,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: activityKeys.myRequests });
+      void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+    },
+  });
+}
+
 export function useRespondToRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: respondToRequest,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: activityKeys.hostRequests });
+      void queryClient.invalidateQueries({ queryKey: activityKeys.all });
     },
   });
 }

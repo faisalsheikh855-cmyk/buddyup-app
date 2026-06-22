@@ -10,6 +10,7 @@ import { useCurrentProfile } from "@/features/profile/hooks";
 import { nearbyActivities } from "@/features/activities/mock-data";
 import { useBlockUser, useReportUser, useSafetyCheckin } from "@/features/safety/hooks";
 import { useThemeColors } from "@/theme/tokens";
+import { useConversations } from "@/features/chat/hooks";
 
 export function generateStaticParams() {
   return nearbyActivities.map((activity) => ({ id: activity.id }));
@@ -25,9 +26,22 @@ export default function ActivityDetailScreen() {
   const reportMutation = useReportUser();
   const blockMutation = useBlockUser();
   const checkinMutation = useSafetyCheckin();
+  const conversationsQuery = useConversations();
   const activity = activityQuery.data;
   const isHost = Boolean(activity && profileQuery.data?.id === activity.created_by);
   const hasRequested = Boolean(activity?.request_status);
+  const conversation = conversationsQuery.data?.find((item) => item.activity_id === activity?.id);
+  const today = new Date();
+  const todayDate = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  const canCheckIn = Boolean(
+    activity?.activity_date
+    && activity.activity_date <= todayDate
+    && (isHost || activity.request_status === "accepted"),
+  );
 
   function requestJoin() {
     if (!id) return;
@@ -73,7 +87,10 @@ export default function ActivityDetailScreen() {
               activityId: activity.id,
               reason: "Safety concern reported from activity details.",
             },
-            { onSuccess: () => Alert.alert("Report sent", "Thank you for helping keep BuddyUp safe.") },
+            {
+              onSuccess: () => Alert.alert("Report sent", "Thank you for helping keep BuddyUp safe."),
+              onError: (error) => Alert.alert("Could not send report", error.message),
+            },
           );
         },
       },
@@ -90,6 +107,7 @@ export default function ActivityDetailScreen() {
         onPress: () => {
           blockMutation.mutate(activity.host!.id, {
             onSuccess: () => Alert.alert("User blocked", "Their profile and activity interactions are now blocked."),
+            onError: (error) => Alert.alert("Could not block user", error.message),
           });
         },
       },
@@ -107,6 +125,7 @@ export default function ActivityDetailScreen() {
             ? "Glad you are safe."
             : "If you are in immediate danger, contact local emergency services now.",
         ),
+        onError: (error) => Alert.alert("Could not save check-in", error.message),
       },
     );
   }
@@ -146,11 +165,15 @@ export default function ActivityDetailScreen() {
               </View>
             </View>
 
-            <View className="mb-5 rounded-[22px] border border-line bg-surface p-4">
+            <Pressable
+              className="mb-5 rounded-[22px] border border-line bg-surface p-4"
+              disabled={!activity.host?.id}
+              onPress={() => activity.host?.id && router.push(`/(app)/profiles/${activity.host.id}` as Href)}
+            >
               <Text className="text-[15px] font-extrabold text-ink">Host</Text>
               <Text className="mt-1 text-[14px] font-semibold text-muted">{activity.host?.name ?? "BuddyUp host"} · {activity.host?.neighborhood ?? "Nearby"}</Text>
               {activity.host ? <View className="mt-3"><TrustBadges profile={activity.host} compact /></View> : null}
-            </View>
+            </Pressable>
 
             <View className="mb-8 rounded-[22px] border border-line bg-surface p-4">
               <Text className="text-[15px] font-extrabold text-ink">What to know</Text>
@@ -176,29 +199,35 @@ export default function ActivityDetailScreen() {
                   <Ionicons name="share-outline" size={17} color={colors.brand} />
                   <Text className="text-[12px] font-bold text-ink">Share plan</Text>
                 </Pressable>
-                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={reportHost}>
-                  <Ionicons name="flag-outline" size={17} color={colors.coral} />
-                  <Text className="text-[12px] font-bold text-ink">Report user</Text>
-                </Pressable>
-                <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={blockHost}>
-                  <Ionicons name="ban-outline" size={17} color={colors.coral} />
-                  <Text className="text-[12px] font-bold text-ink">Block user</Text>
-                </Pressable>
+                {!isHost ? (
+                  <>
+                    <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={reportHost}>
+                      <Ionicons name="flag-outline" size={17} color={colors.coral} />
+                      <Text className="text-[12px] font-bold text-ink">Report user</Text>
+                    </Pressable>
+                    <Pressable className="flex-row items-center gap-2 rounded-app border border-line bg-surface px-3 py-3" onPress={blockHost}>
+                      <Ionicons name="ban-outline" size={17} color={colors.coral} />
+                      <Text className="text-[12px] font-bold text-ink">Block user</Text>
+                    </Pressable>
+                  </>
+                ) : null}
               </View>
             </View>
 
-            <View className="mb-8 rounded-app border border-line bg-surface p-4">
-              <Text className="text-[15px] font-extrabold text-ink">Post-activity check-in</Text>
-              <Text className="mt-1 text-[12px] leading-5 text-muted">After the activity, let BuddyUp know whether you are safe.</Text>
-              <View className="mt-4 flex-row gap-3">
-                <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-brand" onPress={() => checkIn("safe")}>
-                  <Text className="text-[13px] font-bold text-white">I’m safe</Text>
-                </Pressable>
-                <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-coral-soft" onPress={() => checkIn("issue_reported")}>
-                  <Text className="text-[13px] font-bold text-[#A4483F]">I need help</Text>
-                </Pressable>
+            {canCheckIn ? (
+              <View className="mb-8 rounded-app border border-line bg-surface p-4">
+                <Text className="text-[15px] font-extrabold text-ink">Post-activity check-in</Text>
+                <Text className="mt-1 text-[12px] leading-5 text-muted">After the activity, let BuddyUp know whether you are safe.</Text>
+                <View className="mt-4 flex-row gap-3">
+                  <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-brand" onPress={() => checkIn("safe")}>
+                    <Text className="text-[13px] font-bold text-white">I’m safe</Text>
+                  </Pressable>
+                  <Pressable className="h-12 flex-1 items-center justify-center rounded-app bg-coral-soft" onPress={() => checkIn("issue_reported")}>
+                    <Text className="text-[13px] font-bold text-[#A4483F]">I need help</Text>
+                  </Pressable>
+                </View>
               </View>
-            </View>
+            ) : null}
 
             {joinMutation.error ? (
               <View className="mb-4 rounded-[18px] bg-coral-soft px-4 py-3">
@@ -207,12 +236,24 @@ export default function ActivityDetailScreen() {
             ) : null}
 
             {isHost ? (
-              <Button variant="secondary" loading={cancelMutation.isPending} disabled={activity.status === "cancelled"} onPress={cancelPlan}>
-                {activity.status === "cancelled" ? "Activity cancelled" : "Cancel activity"}
-              </Button>
+              <View className="gap-3">
+                {conversation ? (
+                  <Button onPress={() => router.push("/(app)/(tabs)/requests")}>Open member chats</Button>
+                ) : null}
+                {activity.status !== "cancelled" ? (
+                  <Button variant="secondary" onPress={() => router.push(`/(app)/activities/${activity.id}/edit` as Href)}>Edit activity</Button>
+                ) : null}
+                <Button variant="secondary" loading={cancelMutation.isPending} disabled={activity.status === "cancelled"} onPress={cancelPlan}>
+                  {activity.status === "cancelled" ? "Activity cancelled" : "Cancel activity"}
+                </Button>
+              </View>
+            ) : conversation ? (
+              <Button onPress={() => router.push(`/(app)/chat/${conversation.id}`)}>Open activity chat</Button>
             ) : (
-              <Button loading={joinMutation.isPending} disabled={hasRequested} onPress={requestJoin}>
-                {activity.request_status === "accepted"
+              <Button loading={joinMutation.isPending} disabled={hasRequested || activity.status !== "open"} onPress={requestJoin}>
+                {activity.status === "full" && !activity.request_status
+                  ? "Activity full"
+                  : activity.request_status === "accepted"
                   ? "Accepted"
                   : activity.request_status === "pending"
                     ? "Request pending"

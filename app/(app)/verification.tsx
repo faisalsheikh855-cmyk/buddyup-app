@@ -12,6 +12,7 @@ import {
   useUploadAvatar,
 } from "@/features/profile/hooks";
 import { useThemeColors } from "@/theme/tokens";
+import { prepareImage } from "@/lib/media";
 
 function ChecklistItem({
   title,
@@ -54,12 +55,13 @@ export default function VerificationScreen() {
   const uploadAvatar = useUploadAvatar();
   const submitSelfie = useSubmitSelfieVerification();
   const profile = profileQuery.data;
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [selfieUri, setSelfieUri] = useState<string | null>(null);
+  const [avatarAsset, setAvatarAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [selfieAsset, setSelfieAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const checklist = getVerificationChecklist(profile);
   const completed = Object.values(checklist).filter(Boolean).length;
   const pending = profile?.verification_status === "pending";
   const rejected = profile?.verification_status === "rejected";
+  const canSubmitSelfie = checklist.email && checklist.photo;
 
   async function chooseAvatar() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -70,7 +72,7 @@ export default function VerificationScreen() {
       aspect: [1, 1],
       quality: 0.85,
     });
-    if (!result.canceled) setAvatarUri(result.assets[0].uri);
+    if (!result.canceled) setAvatarAsset(result.assets[0]);
   }
 
   async function takeSelfie() {
@@ -82,14 +84,15 @@ export default function VerificationScreen() {
       aspect: [1, 1],
       quality: 0.9,
     });
-    if (!result.canceled) setSelfieUri(result.assets[0].uri);
+    if (!result.canceled) setSelfieAsset(result.assets[0]);
   }
 
   async function saveAvatar() {
-    if (!avatarUri) return;
+    if (!avatarAsset) return;
     try {
-      await uploadAvatar.mutateAsync(avatarUri);
-      setAvatarUri(null);
+      const image = await prepareImage(avatarAsset, 1200);
+      await uploadAvatar.mutateAsync(image);
+      setAvatarAsset(null);
       Alert.alert("Profile photo saved", "Your clear profile photo is now visible to other members.");
     } catch (error) {
       Alert.alert("Could not upload photo", error instanceof Error ? error.message : "Try again.");
@@ -97,10 +100,11 @@ export default function VerificationScreen() {
   }
 
   async function sendSelfie() {
-    if (!selfieUri) return;
+    if (!selfieAsset) return;
     try {
-      await submitSelfie.mutateAsync(selfieUri);
-      setSelfieUri(null);
+      const image = await prepareImage(selfieAsset, 1200);
+      await submitSelfie.mutateAsync(image);
+      setSelfieAsset(null);
       Alert.alert("Selfie submitted", "Your selfie is private and is now waiting for review.");
     } catch (error) {
       Alert.alert("Could not submit selfie", error instanceof Error ? error.message : "Try again.");
@@ -147,10 +151,10 @@ export default function VerificationScreen() {
           <ChecklistItem title="Clear profile photo" detail="Use one current photo where your face is easy to recognize." complete={checklist.photo} icon="person-circle-outline">
             {!checklist.photo ? (
               <>
-                {avatarUri ? <Image source={{ uri: avatarUri }} className="mb-3 h-24 w-24 rounded-app" /> : null}
+                {avatarAsset ? <Image source={{ uri: avatarAsset.uri }} className="mb-3 h-24 w-24 rounded-app" /> : null}
                 <View className="flex-row gap-3">
                   <Button className="flex-1" variant="secondary" onPress={chooseAvatar}>Choose photo</Button>
-                  <Button className="flex-1" loading={uploadAvatar.isPending} disabled={!avatarUri} onPress={saveAvatar}>Upload</Button>
+                  <Button className="flex-1" loading={uploadAvatar.isPending} disabled={!avatarAsset} onPress={saveAvatar}>Upload</Button>
                 </View>
               </>
             ) : null}
@@ -158,10 +162,15 @@ export default function VerificationScreen() {
           <ChecklistItem title="Selfie verification" detail="Take a quick live selfie. It stays private and is reviewed by BuddyUp." complete={checklist.selfie} pending={pending} icon="scan-outline">
             {!checklist.selfie && !pending ? (
               <>
-                {selfieUri ? <Image source={{ uri: selfieUri }} className="mb-3 h-24 w-24 rounded-app" /> : null}
+                {selfieAsset ? <Image source={{ uri: selfieAsset.uri }} className="mb-3 h-24 w-24 rounded-app" /> : null}
+                {!canSubmitSelfie ? (
+                  <Text className="mb-3 text-[12px] font-semibold text-muted">
+                    Complete your email and profile photo first.
+                  </Text>
+                ) : null}
                 <View className="flex-row gap-3">
-                  <Button className="flex-1" variant="secondary" onPress={takeSelfie}>Take selfie</Button>
-                  <Button className="flex-1" loading={submitSelfie.isPending} disabled={!selfieUri} onPress={sendSelfie}>Submit</Button>
+                  <Button className="flex-1" variant="secondary" disabled={!canSubmitSelfie} onPress={takeSelfie}>Take selfie</Button>
+                  <Button className="flex-1" loading={submitSelfie.isPending} disabled={!selfieAsset || !canSubmitSelfie} onPress={sendSelfie}>Submit</Button>
                 </View>
               </>
             ) : null}

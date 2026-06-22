@@ -1,6 +1,6 @@
 {
   "name": "buddyup",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -11,6 +11,7 @@
     "build:web": "node scripts/write-runtime-env.mjs && expo export --platform web",
     "build:supabase": "node scripts/build-supabase-setup.mjs",
     "test:backend": "node scripts/check-backend-contract.mjs",
+    "test:web:smoke": "node scripts/smoke-web.mjs",
     "lint": "eslint app src",
     "typecheck": "tsc --noEmit"
   },
@@ -23,13 +24,13 @@
     "expo": "~55.0.26",
     "expo-blur": "~55.0.14",
     "expo-constants": "~55.0.16",
+    "expo-file-system": "~55.0.22",
     "expo-font": "~55.0.8",
     "expo-haptics": "~55.0.14",
     "expo-image": "~55.0.11",
+    "expo-image-manipulator": "~55.0.17",
     "expo-image-picker": "~55.0.20",
     "expo-linking": "~55.0.15",
-    "expo-location": "~55.1.10",
-    "expo-notifications": "~55.0.23",
     "expo-router": "~55.0.16",
     "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
@@ -52,6 +53,7 @@
     "babel-preset-expo": "~55.0.8",
     "eslint": "^9.39.4",
     "eslint-config-expo": "~55.0.1",
+    "playwright": "^1.60.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.2"
   }

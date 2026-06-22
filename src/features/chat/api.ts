@@ -50,12 +50,26 @@ export async function listConversations(): Promise<Conversation[]> {
 }
 
 export async function listMessages(conversationId: string): Promise<ConversationMessage[]> {
-  const { data, error } = await requireClient()
+  const client = requireClient();
+  const { data, error } = await client
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw error;
+  const profile = await getCurrentProfile();
+  if (profile) {
+    const unreadIds = (data ?? [])
+      .filter((message) => message.sender_id !== profile.id && !message.read_at)
+      .map((message) => message.id);
+    if (unreadIds.length) {
+      const { error: readError } = await client
+        .from("messages")
+        .update({ read_at: new Date().toISOString() })
+        .in("id", unreadIds);
+      if (readError) throw readError;
+    }
+  }
   return (data ?? []) as ConversationMessage[];
 }
 

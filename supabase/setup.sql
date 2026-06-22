@@ -93,6 +93,17 @@ create unique index if not exists profiles_username_unique_idx
   on public.profiles (lower(username))
   where username is not null;
 
+create table if not exists public.profile_photos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  photo_url text not null,
+  storage_path text not null,
+  position integer not null default 0 check (position between 0 and 5),
+  created_at timestamptz not null default now(),
+  unique (user_id, storage_path),
+  unique (user_id, position)
+);
+
 create table if not exists public.activities (
   id uuid primary key default gen_random_uuid(),
   created_by uuid not null references public.profiles(id) on delete cascade,
@@ -106,6 +117,8 @@ create table if not exists public.activities (
   activity_date date,
   activity_time time,
   max_people integer not null default 2,
+  joined_count integer not null default 1,
+  skill_level text not null default 'All levels',
   status text not null default 'open',
   visibility text not null default 'public',
   created_at timestamptz not null default now(),
@@ -124,6 +137,8 @@ alter table public.activities add column if not exists longitude numeric(9,6);
 alter table public.activities add column if not exists activity_date date;
 alter table public.activities add column if not exists activity_time time;
 alter table public.activities add column if not exists max_people integer not null default 2;
+alter table public.activities add column if not exists joined_count integer not null default 1;
+alter table public.activities add column if not exists skill_level text not null default 'All levels';
 alter table public.activities add column if not exists status text not null default 'open';
 alter table public.activities add column if not exists visibility text not null default 'public';
 alter table public.activities add column if not exists updated_at timestamptz not null default now();
@@ -151,6 +166,9 @@ alter table public.activities add constraint activities_visibility_check
 alter table public.activities drop constraint if exists activities_max_people_check;
 alter table public.activities add constraint activities_max_people_check
   check (max_people between 2 and 100);
+alter table public.activities drop constraint if exists activities_joined_count_check;
+alter table public.activities add constraint activities_joined_count_check
+  check (joined_count between 1 and max_people);
 
 do $$
 declare
@@ -200,6 +218,16 @@ begin
     alter table public.activity_requests alter column host_id set not null;
   end if;
 end $$;
+
+update public.activities a
+set joined_count = least(
+  a.max_people,
+  1 + (
+    select count(*)::integer
+    from public.activity_requests r
+    where r.activity_id = a.id and r.status = 'accepted'
+  )
+);
 
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
@@ -251,6 +279,9 @@ create table if not exists public.messages (
 );
 
 alter table public.messages add column if not exists read_at timestamptz;
+alter table public.messages drop constraint if exists messages_body_check;
+alter table public.messages add constraint messages_body_check
+  check (char_length(btrim(body)) between 1 and 2000);
 
 create table if not exists public.selfie_verifications (
   id uuid primary key default gen_random_uuid(),
@@ -324,6 +355,25 @@ end $$;
 alter table public.safety_checkins add constraint safety_checkins_status_check
   check (status in ('pending', 'safe', 'issue_reported'));
 
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  activity_id uuid references public.activities(id) on delete cascade,
+  conversation_id uuid references public.conversations(id) on delete cascade,
+  type text not null,
+  title text not null,
+  body text not null,
+  read_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint notifications_type_check check (
+    type in (
+      'join_request', 'request_accepted', 'request_declined',
+      'message', 'activity_updated', 'activity_cancelled', 'safety'
+    )
+  )
+);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -335,7 +385,26 @@ begin
 end;
 $$;
 
+create or replace function public.invalidate_verification_on_avatar_change()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if old.avatar_url is distinct from new.avatar_url and old.selfie_verified then
+    new.selfie_verified = false;
+    new.verification_status = 'unverified';
+    new.verification_rejection_reason = null;
+  end if;
+  return new;
+end;
+$$;
+
 drop trigger if exists profiles_calculate_verification_status on public.profiles;
+drop trigger if exists profiles_invalidate_avatar_verification on public.profiles;
+create trigger profiles_invalidate_avatar_verification
+before update of avatar_url on public.profiles
+for each row execute function public.invalidate_verification_on_avatar_change();
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at before update on public.profiles
 for each row execute function public.set_updated_at();
@@ -501,6 +570,13 @@ begin
   if selfie_path not like auth.uid()::text || '/%' then
     raise exception 'Invalid selfie path';
   end if;
+  if not exists (
+    select 1
+    from public.profiles
+    where id = auth.uid() and email_verified and avatar_url is not null
+  ) then
+    raise exception 'Verify your email and upload a profile photo before submitting a selfie';
+  end if;
 
   update public.selfie_verifications
   set status = 'rejected',
@@ -560,6 +636,13 @@ begin
   if target_user is null then
     raise exception 'Pending verification not found';
   end if;
+  if decision = 'approved' and not exists (
+    select 1
+    from public.profiles
+    where id = target_user and email_verified and avatar_url is not null
+  ) then
+    raise exception 'The member must verify email and upload a profile photo first';
+  end if;
 
   update public.profiles
   set selfie_verified = decision = 'approved',
@@ -595,8 +678,20 @@ begin
   if public.users_are_blocked(request_row.host_id, request_row.requester_id) then
     raise exception 'This request cannot be accepted';
   end if;
+  if (
+    select joined_count >= max_people or status <> 'open'
+    from public.activities
+    where id = request_row.activity_id
+    for update
+  ) then
+    raise exception 'This activity is already full or closed';
+  end if;
 
   update public.activity_requests set status = 'accepted' where id = request_id;
+  update public.activities
+  set joined_count = joined_count + 1,
+      status = case when joined_count + 1 >= max_people then 'full' else status end
+  where id = request_row.activity_id;
   insert into public.conversations (activity_id, host_id, participant_id)
   values (request_row.activity_id, request_row.host_id, request_row.requester_id)
   on conflict (activity_id, host_id, participant_id)
@@ -606,10 +701,198 @@ begin
 end;
 $$;
 
+create or replace function public.delete_current_account()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+create or replace function public.notify_activity_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requester_name text;
+  activity_title text;
+begin
+  select full_name into requester_name from public.profiles where id = new.requester_id;
+  select title into activity_title from public.activities where id = new.activity_id;
+  insert into public.notifications (
+    user_id, actor_id, activity_id, type, title, body
+  ) values (
+    new.host_id,
+    new.requester_id,
+    new.activity_id,
+    'join_request',
+    'New join request',
+    coalesce(requester_name, 'A BuddyUp member') || ' wants to join ' ||
+      coalesce(activity_title, 'your activity') || '.'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists activity_request_notification on public.activity_requests;
+create trigger activity_request_notification
+after insert on public.activity_requests
+for each row execute function public.notify_activity_request();
+
+create or replace function public.notify_request_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  activity_title text;
+begin
+  if old.status = new.status or new.status not in ('accepted', 'declined') then
+    return new;
+  end if;
+  select title into activity_title from public.activities where id = new.activity_id;
+  insert into public.notifications (
+    user_id, actor_id, activity_id, type, title, body
+  ) values (
+    new.requester_id,
+    new.host_id,
+    new.activity_id,
+    case when new.status = 'accepted' then 'request_accepted' else 'request_declined' end,
+    case when new.status = 'accepted' then 'Request accepted' else 'Request update' end,
+    case
+      when new.status = 'accepted' then
+        'You can now chat about ' || coalesce(activity_title, 'the activity') || '.'
+      else
+        'Your request for ' || coalesce(activity_title, 'the activity') || ' was declined.'
+    end
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists activity_request_status_notification on public.activity_requests;
+create trigger activity_request_status_notification
+after update of status on public.activity_requests
+for each row execute function public.notify_request_status();
+
+create or replace function public.notify_new_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  conversation_row public.conversations;
+  recipient_id uuid;
+  sender_name text;
+begin
+  select * into conversation_row from public.conversations where id = new.conversation_id;
+  recipient_id = case
+    when new.sender_id = conversation_row.host_id then conversation_row.participant_id
+    else conversation_row.host_id
+  end;
+  select full_name into sender_name from public.profiles where id = new.sender_id;
+  insert into public.notifications (
+    user_id, actor_id, activity_id, conversation_id, type, title, body
+  ) values (
+    recipient_id,
+    new.sender_id,
+    conversation_row.activity_id,
+    new.conversation_id,
+    'message',
+    coalesce(sender_name, 'BuddyUp member'),
+    left(new.body, 140)
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists message_notification on public.messages;
+create trigger message_notification
+after insert on public.messages
+for each row execute function public.notify_new_message();
+
+create or replace function public.notify_activity_cancelled()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.status = new.status or new.status <> 'cancelled' then
+    return new;
+  end if;
+  insert into public.notifications (
+    user_id, actor_id, activity_id, type, title, body
+  )
+  select
+    r.requester_id,
+    new.created_by,
+    new.id,
+    'activity_cancelled',
+    'Activity cancelled',
+    new.title || ' has been cancelled by the host.'
+  from public.activity_requests r
+  where r.activity_id = new.id and r.status in ('pending', 'accepted');
+
+  update public.activity_requests
+  set status = 'cancelled'
+  where activity_id = new.id and status = 'pending';
+  return new;
+end;
+$$;
+
+drop trigger if exists activity_cancelled_notification on public.activities;
+create trigger activity_cancelled_notification
+after update of status on public.activities
+for each row execute function public.notify_activity_cancelled();
+
+create or replace function public.notify_activity_updated()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = 'cancelled' then
+    return new;
+  end if;
+  insert into public.notifications (
+    user_id, actor_id, activity_id, type, title, body
+  )
+  select
+    r.requester_id,
+    new.created_by,
+    new.id,
+    'activity_updated',
+    'Activity details updated',
+    new.title || ' has updated time, place, or plan details.'
+  from public.activity_requests r
+  where r.activity_id = new.id and r.status = 'accepted';
+  return new;
+end;
+$$;
+
+drop trigger if exists activity_updated_notification on public.activities;
+create trigger activity_updated_notification
+after update of title, description, location_name, activity_date, activity_time, max_people
+on public.activities
+for each row execute function public.notify_activity_updated();
+
 drop function if exists public.calculate_profile_verification_status();
 drop function if exists public.submit_identity_verification(text, text, text, text);
 
 revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.invalidate_verification_on_avatar_change() from public, anon, authenticated;
 revoke all on function public.handle_new_user() from public, anon, authenticated;
 revoke all on function public.is_admin_user(uuid) from public, anon, authenticated;
 revoke all on function public.users_are_blocked(uuid, uuid) from public, anon, authenticated;
@@ -619,6 +902,12 @@ revoke all on function public.get_current_profile() from public, anon, authentic
 revoke all on function public.submit_selfie_verification(text) from public, anon, authenticated;
 revoke all on function public.review_selfie_verification(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.accept_activity_request(uuid) from public, anon, authenticated;
+revoke all on function public.delete_current_account() from public, anon, authenticated;
+revoke all on function public.notify_activity_request() from public, anon, authenticated;
+revoke all on function public.notify_request_status() from public, anon, authenticated;
+revoke all on function public.notify_new_message() from public, anon, authenticated;
+revoke all on function public.notify_activity_cancelled() from public, anon, authenticated;
+revoke all on function public.notify_activity_updated() from public, anon, authenticated;
 grant execute on function public.is_admin_user(uuid) to authenticated;
 grant execute on function public.users_are_blocked(uuid, uuid) to authenticated;
 grant execute on function public.is_verified_user(uuid) to authenticated;
@@ -627,9 +916,11 @@ grant execute on function public.get_current_profile() to authenticated;
 grant execute on function public.submit_selfie_verification(text) to authenticated;
 grant execute on function public.review_selfie_verification(uuid, text, text) to authenticated;
 grant execute on function public.accept_activity_request(uuid) to authenticated;
+grant execute on function public.delete_current_account() to authenticated;
 
 create index if not exists activities_feed_idx on public.activities(status, visibility, activity_date, activity_time);
 create index if not exists activities_creator_idx on public.activities(created_by);
+create index if not exists profile_photos_user_idx on public.profile_photos(user_id, position);
 create index if not exists activity_requests_host_idx on public.activity_requests(host_id, status, created_at desc);
 create index if not exists activity_requests_requester_idx on public.activity_requests(requester_id, created_at desc);
 create index if not exists conversations_host_idx on public.conversations(host_id);
@@ -647,6 +938,7 @@ create index if not exists reports_activity_idx on public.reports(activity_id);
 create index if not exists blocks_blocked_user_idx on public.blocks(blocked_user_id);
 create index if not exists safety_checkins_issue_idx on public.safety_checkins(status, updated_at desc);
 create index if not exists safety_checkins_user_idx on public.safety_checkins(user_id);
+create index if not exists notifications_user_idx on public.notifications(user_id, read_at, created_at desc);
 
 do $$
 begin
@@ -661,11 +953,25 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'notifications'
+  ) then
+    alter publication supabase_realtime add table public.notifications;
+  end if;
+end $$;
+
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- Source: supabase/rls.sql
 -- ============================================================
 alter table public.profiles enable row level security;
+alter table public.profile_photos enable row level security;
 alter table public.activities enable row level security;
 alter table public.activity_requests enable row level security;
 alter table public.conversations enable row level security;
@@ -674,8 +980,10 @@ alter table public.selfie_verifications enable row level security;
 alter table public.reports enable row level security;
 alter table public.blocks enable row level security;
 alter table public.safety_checkins enable row level security;
+alter table public.notifications enable row level security;
 
 revoke all on table public.profiles from anon, authenticated;
+revoke all on table public.profile_photos from anon, authenticated;
 revoke all on table public.activities from anon, authenticated;
 revoke all on table public.activity_requests from anon, authenticated;
 revoke all on table public.conversations from anon, authenticated;
@@ -684,12 +992,13 @@ revoke all on table public.selfie_verifications from anon, authenticated;
 revoke all on table public.reports from anon, authenticated;
 revoke all on table public.blocks from anon, authenticated;
 revoke all on table public.safety_checkins from anon, authenticated;
+revoke all on table public.notifications from anon, authenticated;
 
 grant select on table public.activities to authenticated;
 grant insert on table public.activities to authenticated;
 grant update (
   title, description, category, city, location_name, latitude, longitude,
-  activity_date, activity_time, max_people, status, visibility
+  activity_date, activity_time, max_people, skill_level, status, visibility
 ) on table public.activities to authenticated;
 grant delete on table public.activities to authenticated;
 
@@ -698,12 +1007,15 @@ grant update (status) on table public.activity_requests to authenticated;
 
 grant select on table public.conversations to authenticated;
 grant select, insert on table public.messages to authenticated;
+grant update (read_at) on table public.messages to authenticated;
 grant select, insert on table public.selfie_verifications to authenticated;
 grant select, insert on table public.reports to authenticated;
 grant update (status) on table public.reports to authenticated;
 grant select, insert, delete on table public.blocks to authenticated;
 grant select, insert on table public.safety_checkins to authenticated;
 grant update (status, notes) on table public.safety_checkins to authenticated;
+grant select, insert, delete on table public.profile_photos to authenticated;
+grant select, update (read_at), delete on table public.notifications to authenticated;
 
 drop policy if exists "Authenticated users can view profiles" on public.profiles;
 drop policy if exists "Users manage their own profile" on public.profiles;
@@ -717,7 +1029,14 @@ using (
   or public.is_admin_user((select auth.uid()))
   or (
     not is_blocked
-    and not public.users_are_blocked((select auth.uid()), id)
+    and (
+      not public.users_are_blocked((select auth.uid()), id)
+      or exists (
+        select 1
+        from public.blocks b
+        where b.blocker_id = (select auth.uid()) and b.blocked_user_id = profiles.id
+      )
+    )
   )
 );
 
@@ -736,6 +1055,25 @@ with check (id = (select auth.uid()));
 revoke update on public.profiles from authenticated;
 grant update (full_name, username, city, bio, avatar_url, phone, interests)
 on public.profiles to authenticated;
+
+drop policy if exists "Profile photos visible unless blocked" on public.profile_photos;
+create policy "Profile photos visible unless blocked" on public.profile_photos
+for select to authenticated
+using (
+  user_id = (select auth.uid())
+  or public.is_admin_user((select auth.uid()))
+  or not public.users_are_blocked((select auth.uid()), user_id)
+);
+
+drop policy if exists "Users insert own profile photos" on public.profile_photos;
+create policy "Users insert own profile photos" on public.profile_photos
+for insert to authenticated
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users delete own profile photos" on public.profile_photos;
+create policy "Users delete own profile photos" on public.profile_photos
+for delete to authenticated
+using (user_id = (select auth.uid()));
 
 drop policy if exists "Visible public activities" on public.activities;
 drop policy if exists "Authenticated users browse activities" on public.activities;
@@ -791,7 +1129,10 @@ with check (
 drop policy if exists "Participants update request status" on public.activity_requests;
 create policy "Participants update request status" on public.activity_requests
 for update to authenticated
-using (host_id = (select auth.uid()) or requester_id = (select auth.uid()))
+using (
+  status = 'pending'
+  and (host_id = (select auth.uid()) or requester_id = (select auth.uid()))
+)
 with check (
   (host_id = (select auth.uid()) and status in ('accepted', 'declined'))
   or (requester_id = (select auth.uid()) and status = 'cancelled')
@@ -832,6 +1173,26 @@ with check (
     where c.id = conversation_id
       and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
       and not public.users_are_blocked(c.host_id, c.participant_id)
+  )
+);
+
+drop policy if exists "Recipients mark messages read" on public.messages;
+create policy "Recipients mark messages read" on public.messages
+for update to authenticated
+using (
+  sender_id <> (select auth.uid())
+  and exists (
+    select 1 from public.conversations c
+    where c.id = conversation_id
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
+  )
+)
+with check (
+  sender_id <> (select auth.uid())
+  and exists (
+    select 1 from public.conversations c
+    where c.id = conversation_id
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
   )
 );
 
@@ -898,12 +1259,19 @@ for insert to authenticated
 with check (
   user_id = (select auth.uid())
   and (
-    exists (select 1 from public.activities a where a.id = activity_id and a.created_by = (select auth.uid()))
+    exists (
+      select 1 from public.activities a
+      where a.id = activity_id
+        and a.created_by = (select auth.uid())
+        and a.activity_date <= current_date
+    )
     or exists (
       select 1 from public.activity_requests r
+      join public.activities a on a.id = r.activity_id
       where r.activity_id = safety_checkins.activity_id
         and r.requester_id = (select auth.uid())
         and r.status = 'accepted'
+        and a.activity_date <= current_date
     )
   )
 );
@@ -913,6 +1281,22 @@ create policy "Users update own checkins" on public.safety_checkins
 for update to authenticated
 using (user_id = (select auth.uid()))
 with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users read own notifications" on public.notifications;
+create policy "Users read own notifications" on public.notifications
+for select to authenticated
+using (user_id = (select auth.uid()));
+
+drop policy if exists "Users mark own notifications read" on public.notifications;
+create policy "Users mark own notifications read" on public.notifications
+for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users delete own notifications" on public.notifications;
+create policy "Users delete own notifications" on public.notifications
+for delete to authenticated
+using (user_id = (select auth.uid()));
 
 do $$
 begin
@@ -959,6 +1343,19 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'profile-photos',
+  'profile-photos',
+  true,
+  5242880,
+  array['image/jpeg']
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 drop policy if exists "Users upload their own profile photos" on storage.objects;
 drop policy if exists "Users update their own profile photos" on storage.objects;
 drop policy if exists "Users delete their own profile photos" on storage.objects;
@@ -966,6 +1363,11 @@ drop policy if exists "Public profile photos are readable" on storage.objects;
 drop policy if exists "Users upload their own identity documents" on storage.objects;
 drop policy if exists "Users view their own identity documents" on storage.objects;
 drop policy if exists "Public avatar reads" on storage.objects;
+drop policy if exists "Users read own avatar objects" on storage.objects;
+drop policy if exists "Users upload own profile gallery" on storage.objects;
+drop policy if exists "Users read own profile gallery objects" on storage.objects;
+drop policy if exists "Users update own profile gallery" on storage.objects;
+drop policy if exists "Users delete own profile gallery" on storage.objects;
 
 drop policy if exists "Users upload own avatar" on storage.objects;
 create policy "Users upload own avatar" on storage.objects
@@ -992,6 +1394,45 @@ create policy "Users delete own avatar" on storage.objects
 for delete to authenticated
 using (
   bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users read own avatar objects" on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users upload own profile gallery" on storage.objects
+for insert to authenticated
+with check (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users read own profile gallery objects" on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users update own profile gallery" on storage.objects
+for update to authenticated
+using (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+)
+with check (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users delete own profile gallery" on storage.objects
+for delete to authenticated
+using (
+  bucket_id = 'profile-photos'
   and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 

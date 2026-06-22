@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import { Header } from "@/components/ui/header";
@@ -10,8 +10,12 @@ import { isProfileVerified } from "@/features/profile/api";
 import { useCurrentProfile } from "@/features/profile/hooks";
 import { useThemeColors } from "@/theme/tokens";
 
-const activities = ["Tennis", "Badminton", "Chess", "Table tennis", "Basketball", "Run club"];
-const levels = ["Beginner", "Casual", "Intermediate"];
+const activities = [
+  "Badminton", "Tennis", "Gym", "Shopping", "Soccer", "Pickleball",
+  "Coffee", "Walks", "Hiking", "Rec Room", "Basketball", "Chess",
+  "Table tennis", "Board games", "Run club",
+];
+const levels = ["Beginner", "All levels", "Intermediate", "Advanced"];
 const dates = ["Today", "Tomorrow", "Friday", "This weekend"];
 
 export default function CreateActivityScreen() {
@@ -36,6 +40,15 @@ export default function CreateActivityScreen() {
 
   function postActivity() {
     if (!canPost) return;
+    const activityTime = timeForDatabase(startsAt);
+    if (!activityTime) {
+      Alert.alert("Check the start time", "Use a time like 6:30 PM or 18:30.");
+      return;
+    }
+    if (Number(spots) < 2 || Number(spots) > 100) {
+      Alert.alert("Check group size", "Activities must allow between 2 and 100 people, including you.");
+      return;
+    }
     createMutation.mutate(
       {
         title: title.trim(),
@@ -43,8 +56,9 @@ export default function CreateActivityScreen() {
         city: profileQuery.data?.city ?? "Vancouver",
         locationName: location.trim(),
         activityDate: dateForLabel(dateLabel),
-        activityTime: timeForDatabase(startsAt),
+        activityTime,
         maxPeople: Number(spots),
+        skillLevel: level,
         description: description.trim() || "Friendly activity. Request to join and confirm details with the host.",
       },
       {
@@ -186,13 +200,16 @@ function dateForLabel(label: string) {
   return date.toISOString().slice(0, 10);
 }
 
-function timeForDatabase(value: string) {
+function timeForDatabase(value: string): string | null {
   const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-  if (!match) return "18:30";
+  if (!match) return null;
   let hour = Number(match[1]);
-  const minute = match[2] ?? "00";
+  const minuteNumber = Number(match[2] ?? "00");
   const period = match[3]?.toUpperCase();
+  if (minuteNumber > 59) return null;
+  if (period && (hour < 1 || hour > 12)) return null;
+  if (!period && (hour < 0 || hour > 23)) return null;
   if (period === "PM" && hour < 12) hour += 12;
   if (period === "AM" && hour === 12) hour = 0;
-  return `${String(hour).padStart(2, "0")}:${minute}`;
+  return `${String(hour).padStart(2, "0")}:${String(minuteNumber).padStart(2, "0")}`;
 }

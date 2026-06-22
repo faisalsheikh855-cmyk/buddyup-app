@@ -24,6 +24,19 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'profile-photos',
+  'profile-photos',
+  true,
+  5242880,
+  array['image/jpeg']
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 drop policy if exists "Users upload their own profile photos" on storage.objects;
 drop policy if exists "Users update their own profile photos" on storage.objects;
 drop policy if exists "Users delete their own profile photos" on storage.objects;
@@ -31,6 +44,11 @@ drop policy if exists "Public profile photos are readable" on storage.objects;
 drop policy if exists "Users upload their own identity documents" on storage.objects;
 drop policy if exists "Users view their own identity documents" on storage.objects;
 drop policy if exists "Public avatar reads" on storage.objects;
+drop policy if exists "Users read own avatar objects" on storage.objects;
+drop policy if exists "Users upload own profile gallery" on storage.objects;
+drop policy if exists "Users read own profile gallery objects" on storage.objects;
+drop policy if exists "Users update own profile gallery" on storage.objects;
+drop policy if exists "Users delete own profile gallery" on storage.objects;
 
 drop policy if exists "Users upload own avatar" on storage.objects;
 create policy "Users upload own avatar" on storage.objects
@@ -57,6 +75,45 @@ create policy "Users delete own avatar" on storage.objects
 for delete to authenticated
 using (
   bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users read own avatar objects" on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users upload own profile gallery" on storage.objects
+for insert to authenticated
+with check (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users read own profile gallery objects" on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users update own profile gallery" on storage.objects
+for update to authenticated
+using (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+)
+with check (
+  bucket_id = 'profile-photos'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "Users delete own profile gallery" on storage.objects
+for delete to authenticated
+using (
+  bucket_id = 'profile-photos'
   and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 

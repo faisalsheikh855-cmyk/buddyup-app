@@ -12,8 +12,11 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the route structure, data 
 - Public activity feed, verified-member activity creation, join requests and host decisions.
 - Accepted-request conversations with Row Level Security and Realtime message refresh.
 - Selfie-only MVP verification with private uploads and an admin approval dashboard.
-- Public avatars, profile editing, interests, trust badges and verification gating.
+- Native-safe avatar uploads, a 6-photo profile gallery, profile editing, interests, public member profiles, trust badges and verification gating.
 - Reporting, blocking, public-meetup reminders and post-activity safety check-ins.
+- In-app request/message notifications, password recovery, blocked-account management and permanent account deletion.
+- Host activity editing, group-capacity enforcement, sent-request tracking and request cancellation.
+- Admin queues for selfie verification and member reports.
 - Light, dark and device appearance modes.
 
 ## Run
@@ -79,16 +82,16 @@ For `faisalsheikh855-cmyk/buddyup-app`, the Pages URL is:
 https://faisalsheikh855-cmyk.github.io/buddyup-app/
 ```
 
-### Setup
+### Automated setup
 
-1. Build with `EXPO_BASE_URL=/buddyup-app npm run build:web`.
-2. Copy `dist/index.html` to `dist/404.html`.
-3. Add an empty `dist/.nojekyll` file.
-4. Push the contents of `dist` to the `gh-pages` branch.
-5. In GitHub, open **Settings** > **Pages** and set **Source** to **Deploy from a branch**, branch `gh-pages`, folder `/`.
-6. In Supabase **Authentication** > **URL Configuration**, add `https://faisalsheikh855-cmyk.github.io/buddyup-app/auth` as an allowed redirect URL.
+1. In GitHub repository settings, add Actions secrets:
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+2. Open **Settings → Pages** and select **GitHub Actions** as the source.
+3. Push to `main`. `.github/workflows/ci.yml` validates the app and `.github/workflows/deploy-pages.yml` deploys it.
+4. In Supabase **Authentication → URL Configuration**, add `https://faisalsheikh855-cmyk.github.io/buddyup-app/auth`.
 
-The `EXPO_BASE_URL` value makes generated assets load under `/buddyup-app`. The `404.html` fallback lets direct links such as `/buddyup-app/auth` load the app, and `.nojekyll` ensures GitHub Pages serves Expo's generated assets normally.
+The workflow supplies `EXPO_BASE_URL=/buddyup-app`, creates `404.html`, and adds `.nojekyll` automatically.
 
 ## Supabase Production Setup
 
@@ -156,3 +159,39 @@ Redeploy after changing variables. The build command is `npm run build:web` and 
 8. Use a second verified account to request access.
 9. Accept the request and open the automatically created conversation.
 10. Send messages from both accounts, then test report, block and safety check-in actions.
+11. Add and remove gallery photos, then confirm the public profile displays them.
+12. Confirm request decisions and new messages appear in Notifications.
+13. Confirm a host cannot accept more members after the activity reaches capacity.
+14. Confirm changing a verified avatar invalidates selfie verification.
+15. Confirm account deletion removes the account and its storage files.
+
+## Automated Checks
+
+```bash
+npm run typecheck
+npm run lint
+npm run build:supabase
+npm run test:backend
+npm run build:web
+```
+
+With the web dev server running on port `8082`, use the installed Chrome browser for responsive route smoke testing:
+
+```bash
+npm run web -- --port 8082
+npm run test:web:smoke
+```
+
+## Native Release
+
+The project includes `eas.json`, a 1024×1024 app icon, iOS/Android identifiers and internal/production EAS build profiles.
+
+1. Install and authenticate the EAS CLI: `npm install -g eas-cli && eas login`.
+2. Run `eas init` once to create the Expo project and add its project ID.
+3. Add the two public Supabase variables to EAS environment variables.
+4. Build internal testers with `eas build --profile preview --platform all`.
+5. Test camera, photo library, deep-link email confirmation and password recovery on physical devices.
+6. Create store listings, support contact details, screenshots and privacy disclosures.
+7. Build and submit with `eas build --profile production --platform all` and `eas submit --profile production --platform all`.
+
+App-store accounts, legal business/contact details and store-review approval are external launch requirements and are not stored in this repository.

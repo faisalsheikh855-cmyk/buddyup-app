@@ -17,6 +17,7 @@ function RootNavigator() {
   const authReady = useSessionStore((state) => state.authReady);
   const setSession = useSessionStore((state) => state.setSession);
   const setAuthReady = useSessionStore((state) => state.setAuthReady);
+  const setPasswordRecovery = useSessionStore((state) => state.setPasswordRecovery);
   const setStorageReady = useSessionStore((state) => state.setStorageReady);
   const { colors, resolvedTheme } = useTheme();
   const ready = Platform.OS === "web" || (storageReady && authReady);
@@ -67,11 +68,14 @@ function RootNavigator() {
         if (mounted) setAuthReady(true);
       });
 
-    const { data } = client.auth.onAuthStateChange((_event, session) => {
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      if (event === "SIGNED_OUT") setPasswordRecovery(false);
       if (mounted) {
         setSession(session);
         setAuthReady(true);
       }
+      if (!session) queryClient.clear();
       if (session) void ensureProfile(session).catch(() => undefined);
     });
 
@@ -86,7 +90,7 @@ function RootNavigator() {
       data.subscription.unsubscribe();
       appState.remove();
     };
-  }, [setAuthReady, setSession]);
+  }, [setAuthReady, setPasswordRecovery, setSession]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

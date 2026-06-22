@@ -1,4 +1,5 @@
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import { Screen } from "@/components/ui/screen";
@@ -9,6 +10,7 @@ import type { Activity } from "@/features/activities/api";
 import { isProfileVerified } from "@/features/profile/api";
 import { useCurrentProfile } from "@/features/profile/hooks";
 import { useThemeColors } from "@/theme/tokens";
+import { useNotifications } from "@/features/notifications/hooks";
 
 type Category = {
   title: string;
@@ -31,11 +33,12 @@ type Plan = {
   trust: string;
   image: string;
   tint: string;
+  activityDate?: string | null;
   requestStatus?: Activity["request_status"];
   hostTrust?: Activity["host"];
 };
 
-const filters = ["Today", "Tomorrow", "This weekend", "Nearby", "Beginner", "Indoor", "Needs 1 more"];
+const filters = ["Today", "Tomorrow", "This weekend", "Beginner", "Needs 1 more"];
 
 const categories: Category[] = [
   {
@@ -82,84 +85,6 @@ const categories: Category[] = [
   },
 ];
 
-const featuredPlan: Plan = {
-  id: "badminton-tonight",
-  title: "Badminton doubles after work",
-  sport: "Badminton",
-  when: "Today, 6:30 PM",
-  place: "Roundhouse Centre",
-  distance: "1.2 km",
-  level: "All levels",
-  spots: "3/4 joined",
-  host: "Hosted by Maya",
-  trust: "Verified host",
-  image: "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=85",
-  tint: "rgba(8, 127, 99, 0.64)",
-};
-
-const todayPlans: Plan[] = [
-  featuredPlan,
-  {
-    id: "tennis-kits",
-    title: "Tennis rally at Kits courts",
-    sport: "Tennis",
-    when: "Today, 7:15 PM",
-    place: "Kitsilano Beach courts",
-    distance: "2.0 km",
-    level: "Intermediate",
-    spots: "1 spot left",
-    host: "Hosted by Arjun",
-    trust: "Usually replies fast",
-    image: "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=900&q=85",
-    tint: "rgba(54, 132, 62, 0.58)",
-  },
-  {
-    id: "chess-cafe",
-    title: "Casual chess tables",
-    sport: "Chess",
-    when: "Tomorrow, 5:30 PM",
-    place: "Bean Around the World",
-    distance: "0.8 km",
-    level: "Beginner friendly",
-    spots: "5 open spots",
-    host: "Hosted by Lina",
-    trust: "New player friendly",
-    image: "https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&w=900&q=85",
-    tint: "rgba(86, 70, 53, 0.58)",
-  },
-];
-
-const beginnerPlans: Plan[] = [
-  {
-    id: "table-tennis-casual",
-    title: "Casual table tennis rotation",
-    sport: "Table tennis",
-    when: "Friday, 6:00 PM",
-    place: "Community rec room",
-    distance: "1.6 km",
-    level: "Casual",
-    spots: "2 spots left",
-    host: "Hosted by Sam",
-    trust: "Verified host",
-    image: "https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=900&q=85",
-    tint: "rgba(0, 115, 150, 0.58)",
-  },
-  {
-    id: "coffee-walk",
-    title: "Coffee and seawall walk",
-    sport: "Walk",
-    when: "Tomorrow, 9:00 AM",
-    place: "English Bay",
-    distance: "0.8 km",
-    level: "Easy",
-    spots: "3 open spots",
-    host: "Hosted by Alex",
-    trust: "Usually replies fast",
-    image: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=900&q=85",
-    tint: "rgba(7, 128, 119, 0.58)",
-  },
-];
-
 const imageByCategory: Record<string, Pick<Plan, "image" | "tint">> = {
   Badminton: {
     image: "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=85",
@@ -202,17 +127,20 @@ function planFromActivity(activity: Activity): Plan {
     trust: activity.host?.neighborhood ? `${activity.host.neighborhood} host` : "Verified host",
     requestStatus: activity.request_status,
     hostTrust: activity.host,
+    activityDate: activity.activity_date,
     ...visual,
   };
 }
 
-function SearchBox() {
+function SearchBox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const colors = useThemeColors();
   return (
     <View className="mb-4 flex-row items-center rounded-[18px] border border-line bg-surface px-4 py-3 shadow-sm">
       <Ionicons name="search" size={19} color={colors.muted} />
       <TextInput
         className="ml-3 min-w-0 flex-1 text-[15px] font-semibold text-ink"
+        value={value}
+        onChangeText={onChange}
         placeholder="Search tennis, chess, beginner..."
         placeholderTextColor="#8B9892"
       />
@@ -223,15 +151,16 @@ function SearchBox() {
   );
 }
 
-function FilterBar() {
+function FilterBar({ selected, onSelect }: { selected: string | null; onSelect: (filter: string | null) => void }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-5 mb-5" contentContainerClassName="gap-2 px-5">
-      {filters.map((filter, index) => (
+      {filters.map((filter) => (
         <Pressable
           key={filter}
-          className={`rounded-full px-4 py-2.5 ${index === 0 ? "bg-ink" : "border border-line bg-surface"}`}
+          className={`rounded-full px-4 py-2.5 ${selected === filter ? "bg-ink" : "border border-line bg-surface"}`}
+          onPress={() => onSelect(selected === filter ? null : filter)}
         >
-          <Text className={`text-[13px] font-extrabold ${index === 0 ? "text-white" : "text-ink"}`}>{filter}</Text>
+          <Text className={`text-[13px] font-extrabold ${selected === filter ? "text-white" : "text-ink"}`}>{filter}</Text>
         </Pressable>
       ))}
     </ScrollView>
@@ -295,10 +224,24 @@ function FeaturedPlan({ plan, onJoin }: { plan: Plan; onJoin: (plan: Plan) => vo
   );
 }
 
-function CategoryCard({ category, width }: { category: Category; width: number }) {
+function CategoryCard({
+  category,
+  width,
+  selected,
+  onPress,
+}: {
+  category: Category;
+  width: number;
+  selected: boolean;
+  onPress: () => void;
+}) {
   const colors = useThemeColors();
   return (
-    <Pressable className="overflow-hidden rounded-[20px] bg-ink active:opacity-90" style={{ width, height: 136 }}>
+    <Pressable
+      className={`overflow-hidden rounded-[20px] bg-ink active:opacity-90 ${selected ? "border-2 border-brand" : ""}`}
+      style={{ width, height: 136 }}
+      onPress={onPress}
+    >
       <ImageBackground source={{ uri: category.image }} resizeMode="cover" className="h-full w-full">
         <View className="absolute inset-0" style={{ backgroundColor: category.tint }} />
         <View className="absolute inset-x-0 bottom-0 h-1/2 bg-black/30" />
@@ -372,13 +315,45 @@ export default function FeedScreen() {
   const activitiesQuery = useActivities();
   const joinMutation = useRequestToJoin();
   const profileQuery = useCurrentProfile();
+  const notificationsQuery = useNotifications();
+  const [search, setSearch] = useState("");
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const contentWidth = Math.min(viewportWidth, 480) - 40;
   const gap = 12;
   const categoryWidth = (contentWidth - gap) / 2;
-  const livePlans = (activitiesQuery.data ?? []).map(planFromActivity);
-  const displayedFeaturedPlan = livePlans[0] ?? featuredPlan;
-  const displayedTodayPlans = livePlans.length ? livePlans : todayPlans;
-  const displayedBeginnerPlans = livePlans.filter((plan) => /beginner|casual|easy|all/i.test(plan.level)).slice(0, 4);
+  const livePlans = useMemo(() => (activitiesQuery.data ?? []).map(planFromActivity), [activitiesQuery.data]);
+  const sourcePlans = livePlans;
+  const filteredPlans = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const localDate = (date: Date) => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+    return sourcePlans.filter((plan) => {
+      if (selectedCategory && plan.sport !== selectedCategory) return false;
+      if (query && !`${plan.title} ${plan.sport} ${plan.place} ${plan.level}`.toLowerCase().includes(query)) return false;
+      if (selectedFilter === "Today" && plan.activityDate !== localDate(today)) return false;
+      if (selectedFilter === "Tomorrow" && plan.activityDate !== localDate(tomorrow)) return false;
+      if (selectedFilter === "This weekend") {
+        if (!plan.activityDate) return false;
+        const activityDate = new Date(`${plan.activityDate}T12:00:00`);
+        const day = activityDate.getDay();
+        const daysAhead = Math.round((activityDate.getTime() - today.setHours(0, 0, 0, 0)) / 86400000);
+        if (daysAhead < 0 || daysAhead > 7 || (day !== 0 && day !== 6)) return false;
+      }
+      if (selectedFilter === "Beginner" && !/beginner|casual|easy|all/i.test(plan.level)) return false;
+      if (selectedFilter === "Needs 1 more" && !/1 (open )?spot|1\/2|1\/3|1\/4/i.test(plan.spots)) return false;
+      return true;
+    });
+  }, [search, selectedCategory, selectedFilter, sourcePlans]);
+  const displayedFeaturedPlan = filteredPlans[0];
+  const displayedBeginnerPlans = filteredPlans.filter((plan) => /beginner|casual|easy|all/i.test(plan.level)).slice(0, 4);
+  const unreadCount = notificationsQuery.data?.filter((item) => !item.read_at).length ?? 0;
 
   function joinPlan(plan: Plan) {
     if (!isProfileVerified(profileQuery.data)) {
@@ -406,11 +381,16 @@ export default function FeedScreen() {
               onPress={() => router.push("/(app)/notifications")}
             >
               <Ionicons name="notifications-outline" size={22} color={colors.ink} />
+              {unreadCount > 0 ? (
+                <View className="absolute right-0 top-0 min-w-5 items-center rounded-full bg-coral px-1">
+                  <Text className="text-[10px] font-extrabold text-white">{unreadCount > 9 ? "9+" : unreadCount}</Text>
+                </View>
+              ) : null}
             </Pressable>
           </View>
 
-          <SearchBox />
-          <FilterBar />
+          <SearchBox value={search} onChange={setSearch} />
+          <FilterBar selected={selectedFilter} onSelect={setSelectedFilter} />
 
           {activitiesQuery.isLoading ? (
             <View className="mb-3 rounded-[20px] border border-line bg-surface p-4">
@@ -433,29 +413,55 @@ export default function FeedScreen() {
             </View>
           ) : null}
 
-          <SectionHeader title="Best match near you" />
-          <FeaturedPlan plan={displayedFeaturedPlan} onJoin={joinPlan} />
+          {displayedFeaturedPlan ? (
+            <>
+              <SectionHeader title="Best match near you" />
+              <FeaturedPlan plan={displayedFeaturedPlan} onJoin={joinPlan} />
+            </>
+          ) : null}
 
           <SectionHeader title="Popular activities" action="See all" />
           <View className="flex-row flex-wrap" style={{ gap }}>
             {categories.map((category) => (
-              <CategoryCard key={category.title} category={category} width={categoryWidth} />
+              <CategoryCard
+                key={category.title}
+                category={{
+                  ...category,
+                  count: sourcePlans.filter((plan) => plan.sport === category.title).length,
+                }}
+                width={categoryWidth}
+                selected={selectedCategory === category.title}
+                onPress={() => setSelectedCategory((current) => current === category.title ? null : category.title)}
+              />
             ))}
           </View>
 
-          <SectionHeader title="Available today" action="View map" />
-          <View className="gap-3">
-            {displayedTodayPlans.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} onJoin={joinPlan} />
-            ))}
-          </View>
+          <SectionHeader title="Available activities" />
+          {filteredPlans.length ? (
+            <View className="gap-3">
+              {filteredPlans.map((plan) => (
+                <PlanCard key={plan.id} plan={plan} onJoin={joinPlan} />
+              ))}
+            </View>
+          ) : (
+            <View className="rounded-[22px] border border-line bg-surface p-6">
+              <Text className="text-center text-[17px] font-extrabold text-ink">No activities match</Text>
+              <Text className="mt-2 text-center text-[13px] leading-5 text-muted">
+                Clear the filters or create the first activity for your community.
+              </Text>
+            </View>
+          )}
 
-          <SectionHeader title="Beginner friendly" />
-          <View className="gap-3">
-            {(displayedBeginnerPlans.length ? displayedBeginnerPlans : beginnerPlans).map((plan) => (
-              <PlanCard key={plan.id} plan={plan} onJoin={joinPlan} />
-            ))}
-          </View>
+          {displayedBeginnerPlans.length ? (
+            <>
+              <SectionHeader title="Beginner friendly" />
+              <View className="gap-3">
+                {displayedBeginnerPlans.map((plan) => (
+                  <PlanCard key={plan.id} plan={plan} onJoin={joinPlan} />
+                ))}
+              </View>
+            </>
+          ) : null}
 
           <EmptyHint />
         </View>

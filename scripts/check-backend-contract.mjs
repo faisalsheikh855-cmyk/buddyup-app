@@ -6,10 +6,12 @@ const storage = readFileSync("supabase/storage.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 const profileApi = readFileSync("src/features/profile/api.ts", "utf8");
 const activityApi = readFileSync("src/features/activities/api.ts", "utf8");
+const notificationApi = readFileSync("src/features/notifications/api.ts", "utf8");
 const adminScreen = readFileSync("app/(app)/admin/verifications.tsx", "utf8");
 
 const requiredTables = [
   "profiles",
+  "profile_photos",
   "activities",
   "activity_requests",
   "conversations",
@@ -18,15 +20,23 @@ const requiredTables = [
   "reports",
   "blocks",
   "safety_checkins",
+  "notifications",
 ];
 
 const requiredFunctions = [
   "is_verified_user",
+  "invalidate_verification_on_avatar_change",
   "users_are_blocked",
   "get_current_profile",
   "submit_selfie_verification",
   "review_selfie_verification",
   "accept_activity_request",
+  "delete_current_account",
+  "notify_activity_request",
+  "notify_request_status",
+  "notify_new_message",
+  "notify_activity_cancelled",
+  "notify_activity_updated",
 ];
 
 const requiredPolicies = [
@@ -38,6 +48,8 @@ const requiredPolicies = [
   "Verified users create reports",
   "Users create own blocks",
   "Activity members create checkins",
+  "Users read own notifications",
+  "Recipients mark messages read",
 ];
 
 const failures = [];
@@ -60,7 +72,7 @@ for (const policy of requiredPolicies) {
   if (!rls.includes(`"${policy}"`)) failures.push(`Missing policy: ${policy}`);
 }
 
-for (const bucket of ["avatars", "selfie-verifications"]) {
+for (const bucket of ["avatars", "selfie-verifications", "profile-photos"]) {
   if (!storage.includes(`'${bucket}'`)) failures.push(`Missing storage bucket: ${bucket}`);
 }
 
@@ -98,7 +110,9 @@ if (schema.includes("safety_checkins_activity_user_unique_idx")) {
 
 if (!profileApi.includes('from("selfie_verifications")')) failures.push("Profile API is not connected to selfie_verifications");
 if (!profileApi.includes('from("avatars")')) failures.push("Profile API is not connected to avatars storage");
+if (!profileApi.includes('from("profile-photos")')) failures.push("Profile API is not connected to profile photo storage");
 if (!activityApi.includes('from("activity_requests")')) failures.push("Activity API is not connected to join requests");
+if (!notificationApi.includes('from("notifications")')) failures.push("Notification API is not connected");
 if (!adminScreen.includes("useReviewSelfieVerification")) failures.push("Admin verification review screen is not connected");
 
 const forbiddenMvpTerms = ["submitIdentityVerification", "identity-documents", "government ID"];
@@ -113,4 +127,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`Backend contract passed: ${requiredTables.length} tables, ${requiredFunctions.length} functions, ${requiredPolicies.length} critical policies, 2 storage buckets.`);
+console.log(`Backend contract passed: ${requiredTables.length} tables, ${requiredFunctions.length} functions, ${requiredPolicies.length} critical policies, 3 storage buckets.`);

@@ -1,4 +1,5 @@
 alter table public.profiles enable row level security;
+alter table public.profile_photos enable row level security;
 alter table public.activities enable row level security;
 alter table public.activity_requests enable row level security;
 alter table public.conversations enable row level security;
@@ -7,8 +8,10 @@ alter table public.selfie_verifications enable row level security;
 alter table public.reports enable row level security;
 alter table public.blocks enable row level security;
 alter table public.safety_checkins enable row level security;
+alter table public.notifications enable row level security;
 
 revoke all on table public.profiles from anon, authenticated;
+revoke all on table public.profile_photos from anon, authenticated;
 revoke all on table public.activities from anon, authenticated;
 revoke all on table public.activity_requests from anon, authenticated;
 revoke all on table public.conversations from anon, authenticated;
@@ -17,12 +20,13 @@ revoke all on table public.selfie_verifications from anon, authenticated;
 revoke all on table public.reports from anon, authenticated;
 revoke all on table public.blocks from anon, authenticated;
 revoke all on table public.safety_checkins from anon, authenticated;
+revoke all on table public.notifications from anon, authenticated;
 
 grant select on table public.activities to authenticated;
 grant insert on table public.activities to authenticated;
 grant update (
   title, description, category, city, location_name, latitude, longitude,
-  activity_date, activity_time, max_people, status, visibility
+  activity_date, activity_time, max_people, skill_level, status, visibility
 ) on table public.activities to authenticated;
 grant delete on table public.activities to authenticated;
 
@@ -31,12 +35,15 @@ grant update (status) on table public.activity_requests to authenticated;
 
 grant select on table public.conversations to authenticated;
 grant select, insert on table public.messages to authenticated;
+grant update (read_at) on table public.messages to authenticated;
 grant select, insert on table public.selfie_verifications to authenticated;
 grant select, insert on table public.reports to authenticated;
 grant update (status) on table public.reports to authenticated;
 grant select, insert, delete on table public.blocks to authenticated;
 grant select, insert on table public.safety_checkins to authenticated;
 grant update (status, notes) on table public.safety_checkins to authenticated;
+grant select, insert, delete on table public.profile_photos to authenticated;
+grant select, update (read_at), delete on table public.notifications to authenticated;
 
 drop policy if exists "Authenticated users can view profiles" on public.profiles;
 drop policy if exists "Users manage their own profile" on public.profiles;
@@ -50,7 +57,14 @@ using (
   or public.is_admin_user((select auth.uid()))
   or (
     not is_blocked
-    and not public.users_are_blocked((select auth.uid()), id)
+    and (
+      not public.users_are_blocked((select auth.uid()), id)
+      or exists (
+        select 1
+        from public.blocks b
+        where b.blocker_id = (select auth.uid()) and b.blocked_user_id = profiles.id
+      )
+    )
   )
 );
 
@@ -69,6 +83,25 @@ with check (id = (select auth.uid()));
 revoke update on public.profiles from authenticated;
 grant update (full_name, username, city, bio, avatar_url, phone, interests)
 on public.profiles to authenticated;
+
+drop policy if exists "Profile photos visible unless blocked" on public.profile_photos;
+create policy "Profile photos visible unless blocked" on public.profile_photos
+for select to authenticated
+using (
+  user_id = (select auth.uid())
+  or public.is_admin_user((select auth.uid()))
+  or not public.users_are_blocked((select auth.uid()), user_id)
+);
+
+drop policy if exists "Users insert own profile photos" on public.profile_photos;
+create policy "Users insert own profile photos" on public.profile_photos
+for insert to authenticated
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users delete own profile photos" on public.profile_photos;
+create policy "Users delete own profile photos" on public.profile_photos
+for delete to authenticated
+using (user_id = (select auth.uid()));
 
 drop policy if exists "Visible public activities" on public.activities;
 drop policy if exists "Authenticated users browse activities" on public.activities;
@@ -124,7 +157,10 @@ with check (
 drop policy if exists "Participants update request status" on public.activity_requests;
 create policy "Participants update request status" on public.activity_requests
 for update to authenticated
-using (host_id = (select auth.uid()) or requester_id = (select auth.uid()))
+using (
+  status = 'pending'
+  and (host_id = (select auth.uid()) or requester_id = (select auth.uid()))
+)
 with check (
   (host_id = (select auth.uid()) and status in ('accepted', 'declined'))
   or (requester_id = (select auth.uid()) and status = 'cancelled')
@@ -165,6 +201,26 @@ with check (
     where c.id = conversation_id
       and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
       and not public.users_are_blocked(c.host_id, c.participant_id)
+  )
+);
+
+drop policy if exists "Recipients mark messages read" on public.messages;
+create policy "Recipients mark messages read" on public.messages
+for update to authenticated
+using (
+  sender_id <> (select auth.uid())
+  and exists (
+    select 1 from public.conversations c
+    where c.id = conversation_id
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
+  )
+)
+with check (
+  sender_id <> (select auth.uid())
+  and exists (
+    select 1 from public.conversations c
+    where c.id = conversation_id
+      and (c.host_id = (select auth.uid()) or c.participant_id = (select auth.uid()))
   )
 );
 
@@ -231,12 +287,19 @@ for insert to authenticated
 with check (
   user_id = (select auth.uid())
   and (
-    exists (select 1 from public.activities a where a.id = activity_id and a.created_by = (select auth.uid()))
+    exists (
+      select 1 from public.activities a
+      where a.id = activity_id
+        and a.created_by = (select auth.uid())
+        and a.activity_date <= current_date
+    )
     or exists (
       select 1 from public.activity_requests r
+      join public.activities a on a.id = r.activity_id
       where r.activity_id = safety_checkins.activity_id
         and r.requester_id = (select auth.uid())
         and r.status = 'accepted'
+        and a.activity_date <= current_date
     )
   )
 );
@@ -246,6 +309,22 @@ create policy "Users update own checkins" on public.safety_checkins
 for update to authenticated
 using (user_id = (select auth.uid()))
 with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users read own notifications" on public.notifications;
+create policy "Users read own notifications" on public.notifications
+for select to authenticated
+using (user_id = (select auth.uid()));
+
+drop policy if exists "Users mark own notifications read" on public.notifications;
+create policy "Users mark own notifications read" on public.notifications
+for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Users delete own notifications" on public.notifications;
+create policy "Users delete own notifications" on public.notifications
+for delete to authenticated
+using (user_id = (select auth.uid()));
 
 do $$
 begin

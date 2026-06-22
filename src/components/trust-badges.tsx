@@ -27,7 +27,12 @@ export function TrustBadges({ profile, compact = false, showPlaceholder = true }
     phone: Boolean(profile?.phone_verified),
     photo: Boolean(profile?.avatar_url),
     selfie: Boolean(profile?.selfie_verified),
-    host: profile?.verification_status === "verified",
+    host: Boolean(
+      profile?.verification_status === "verified"
+      && profile.email_verified
+      && profile.avatar_url
+      && profile.selfie_verified
+    ),
   };
 
   return (

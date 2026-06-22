@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Screen } from "@/components/ui/screen";
-import { useSignIn, useSignUp } from "@/features/auth/hooks";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import {
+  useRequestPasswordReset,
+  useResendSignupConfirmation,
+  useSignIn,
+  useSignUp,
+} from "@/features/auth/hooks";
 import { useSessionStore } from "@/store/session-store";
 import { useThemeColors } from "@/theme/tokens";
 
@@ -17,24 +21,22 @@ export default function AuthScreen() {
   const colors = useThemeColors();
   const [mode, setMode] = useState<AuthMode>("signup");
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [secure, setSecure] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const signInMutation = useSignIn();
   const signUpMutation = useSignUp();
+  const resetMutation = useRequestPasswordReset();
+  const resendMutation = useResendSignupConfirmation();
   const setSession = useSessionStore((state) => state.setSession);
   const session = useSessionStore((state) => state.session);
-  const startPreview = useSessionStore((state) => state.startPreview);
+  const passwordRecovery = useSessionStore((state) => state.passwordRecovery);
   const pending = signInMutation.isPending || signUpMutation.isPending;
 
   useEffect(() => {
-    if (session) router.replace("/");
-  }, [session]);
-
-  function previewApp() {
-    startPreview();
-    router.replace("/");
-  }
+    if (session) router.replace(passwordRecovery ? "/(public)/reset-password" : "/");
+  }, [passwordRecovery, session]);
 
   async function submit() {
     setNotice(null);
@@ -45,7 +47,11 @@ export default function AuthScreen() {
         router.replace("/");
         return;
       }
-      const session = await signUpMutation.mutateAsync({ email: email.trim(), password });
+      const session = await signUpMutation.mutateAsync({
+        email: email.trim(),
+        password,
+        fullName: fullName.trim(),
+      });
       if (!session) {
         setMode("login");
         setNotice("Check your email to verify your account, then log in.");
@@ -60,6 +66,29 @@ export default function AuthScreen() {
           ? "Supabase is rate-limiting signup emails right now. Try logging in if you already have an account, or use Preview while the limit resets."
           : message,
       );
+    }
+  }
+
+  async function resetPassword() {
+    if (!email.trim()) {
+      setNotice("Enter your email address first.");
+      return;
+    }
+    try {
+      await resetMutation.mutateAsync(email);
+      setNotice("Password reset email sent. Open the link on this device to choose a new password.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not send the reset email.");
+    }
+  }
+
+  async function resendConfirmation() {
+    if (!email.trim()) return;
+    try {
+      await resendMutation.mutateAsync(email);
+      setNotice("A new confirmation email has been sent.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not resend the confirmation email.");
     }
   }
 
@@ -88,6 +117,16 @@ export default function AuthScreen() {
           ))}
         </View>
         <View className="gap-4">
+          {mode === "signup" ? (
+            <Field
+              label="Full name"
+              value={fullName}
+              onChangeText={setFullName}
+              autoComplete="name"
+              placeholder="Your name"
+              icon={<Ionicons name="person-outline" size={19} color={colors.muted} />}
+            />
+          ) : null}
           <Field
             label="Email"
             value={email}
@@ -103,7 +142,7 @@ export default function AuthScreen() {
             onChangeText={setPassword}
             secureTextEntry={secure}
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
             icon={<Ionicons name="lock-closed-outline" size={19} color={colors.muted} />}
             trailing={(
               <Pressable hitSlop={12} onPress={() => setSecure((value) => !value)}>
@@ -111,27 +150,41 @@ export default function AuthScreen() {
               </Pressable>
             )}
           />
+          {mode === "login" ? (
+            <Pressable className="self-end" onPress={resetPassword} disabled={resetMutation.isPending}>
+              <Text className="text-[12px] font-bold text-brand">
+                {resetMutation.isPending ? "Sending..." : "Forgot password?"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         {notice ? (
           <View className="mt-5 rounded-app bg-coral-soft px-4 py-3">
             <Text className="text-[13px] leading-5 text-[#A4483F]">{notice}</Text>
           </View>
         ) : null}
-        <View className="mt-5 rounded-app border border-line bg-surface px-4 py-3">
-          <Text className="block w-full text-[13px] leading-5 text-muted">
-            {isSupabaseConfigured
-              ? "Preview lets you explore the app while auth email limits reset. Live posting and requests still require login."
-              : "Add Expo Supabase environment keys to enable authentication."}
-          </Text>
-          <View className="mt-3">
-            <Button variant="secondary" onPress={previewApp}>Preview the app</Button>
-          </View>
-        </View>
+        {mode === "login" && notice?.toLowerCase().includes("confirm") ? (
+          <Pressable className="mt-3 self-start" onPress={resendConfirmation} disabled={resendMutation.isPending}>
+            <Text className="text-[12px] font-bold text-brand">
+              {resendMutation.isPending ? "Sending..." : "Resend confirmation email"}
+            </Text>
+          </Pressable>
+        ) : null}
         <View className="mt-8">
-          <Button loading={pending} disabled={!email.trim() || password.length < 6} onPress={submit}>
+          <Button
+            loading={pending}
+            disabled={!email.trim() || password.length < 8 || (mode === "signup" && !fullName.trim())}
+            onPress={submit}
+          >
             {mode === "signup" ? "Create account" : "Log in"}
           </Button>
         </View>
+        <Text className="mt-5 text-center text-[11px] leading-5 text-muted">
+          By continuing, you agree to BuddyUp’s{" "}
+          <Text className="font-bold text-brand" onPress={() => router.push("/(public)/terms" as Href)}>Terms of Use</Text>
+          {" "}and acknowledge the{" "}
+          <Text className="font-bold text-brand" onPress={() => router.push("/(public)/privacy" as Href)}>Privacy Policy</Text>.
+        </Text>
       </Animated.View>
     </Screen>
   );

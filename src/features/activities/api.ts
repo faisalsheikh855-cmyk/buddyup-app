@@ -14,6 +14,8 @@ export type Activity = {
   activity_date: string | null;
   activity_time: string | null;
   max_people: number;
+  joined_count: number;
+  skill_level: string;
   status: "open" | "full" | "cancelled" | "completed";
   visibility: "public" | "private";
   created_at: string;
@@ -37,6 +39,7 @@ export type ActivityDraft = {
   activityTime: string;
   maxPeople: number;
   description: string;
+  skillLevel: string;
 };
 
 export type ActivityRequest = {
@@ -95,8 +98,11 @@ function normalizeActivity(row: Record<string, unknown>): Activity {
     }) : "Date to confirm",
     starts_at: activityTime ? activityTime.slice(0, 5) : "Time to confirm",
     location: (row.location_name as string | null) ?? (row.city as string | null) ?? "Location to confirm",
-    spots: (row.max_people as number) ?? 2,
-    pace: "All levels",
+    spots: Math.max(
+      0,
+      ((row.max_people as number) ?? 2) - ((row.joined_count as number) ?? 1),
+    ),
+    pace: (row.skill_level as string | null) ?? "All levels",
     distance_km: null,
   };
 }
@@ -104,14 +110,26 @@ function normalizeActivity(row: Record<string, unknown>): Activity {
 export async function listActivities(): Promise<Activity[]> {
   const client = requireClient();
   const profile = await getCurrentProfile();
-  const { data, error } = await client
+  const today = new Date();
+  const todayDate = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  let query = client
     .from("activities")
     .select(`*, host:profiles!activities_created_by_fkey(${publicProfileColumns})`)
     .eq("visibility", "public")
     .in("status", ["open", "full"])
+    .gte("activity_date", todayDate)
     .order("activity_date", { ascending: true, nullsFirst: false })
     .order("activity_time", { ascending: true, nullsFirst: false })
     .limit(50);
+  if (profile?.city) {
+    const city = profile.city.split(",")[0].trim();
+    if (city) query = query.ilike("city", `%${city}%`);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   const activities = (data ?? []).map((row) => normalizeActivity(row));
   if (!profile || activities.length === 0) return activities;
@@ -168,6 +186,7 @@ export async function createActivity(draft: ActivityDraft): Promise<Activity> {
       activity_date: draft.activityDate,
       activity_time: draft.activityTime,
       max_people: draft.maxPeople,
+      skill_level: draft.skillLevel,
       description: draft.description,
     })
     .select("*")
@@ -181,7 +200,7 @@ export async function updateActivity({
   update,
 }: {
   id: string;
-  update: Partial<Pick<Activity, "title" | "description" | "category" | "city" | "location_name" | "activity_date" | "activity_time" | "max_people" | "status">>;
+  update: Partial<Pick<Activity, "title" | "description" | "category" | "city" | "location_name" | "activity_date" | "activity_time" | "max_people" | "skill_level" | "status">>;
 }) {
   const client = requireClient();
   const { data, error } = await client.from("activities").update(update).eq("id", id).select("*").single();
@@ -240,6 +259,37 @@ export async function listHostRequests(): Promise<ActivityRequest[]> {
     activity: row.activity ? normalizeActivity(row.activity) : null,
     requester: normalizeRelatedProfile(row.requester),
   }));
+}
+
+export async function listMyRequests(): Promise<ActivityRequest[]> {
+  const client = requireClient();
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+  const { data, error } = await client
+    .from("activity_requests")
+    .select(`
+      *,
+      activity:activities!activity_requests_activity_id_fkey(
+        *,
+        host:profiles!activities_created_by_fkey(${publicProfileColumns})
+      )
+    `)
+    .eq("requester_id", profile.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...(row as unknown as ActivityRequest),
+    activity: row.activity ? normalizeActivity(row.activity) : null,
+  }));
+}
+
+export async function cancelJoinRequest(requestId: string) {
+  const client = requireClient();
+  const { error } = await client
+    .from("activity_requests")
+    .update({ status: "cancelled" })
+    .eq("id", requestId);
+  if (error) throw error;
 }
 
 export async function respondToRequest({ requestId, status }: { requestId: string; status: "accepted" | "declined" }) {

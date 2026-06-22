@@ -8,12 +8,14 @@ type SessionState = {
   session: Session | null;
   previewMode: boolean;
   authReady: boolean;
+  passwordRecovery: boolean;
   onboarded: boolean;
   storageReady: boolean;
   setSession: (session: Session | null) => void;
   startPreview: () => void;
   stopPreview: () => void;
   setAuthReady: (ready: boolean) => void;
+  setPasswordRecovery: (active: boolean) => void;
   finishOnboarding: () => void;
   setStorageReady: (ready: boolean) => void;
   hydrate: () => Promise<void>;
@@ -28,12 +30,14 @@ export const useSessionStore = create<SessionState>((set) => ({
   session: null,
   previewMode: false,
   authReady: false,
+  passwordRecovery: false,
   onboarded: false,
   storageReady: false,
   setSession: (session) => set({ session, previewMode: false }),
   startPreview: () => set({ previewMode: true }),
   stopPreview: () => set({ previewMode: false }),
   setAuthReady: (authReady) => set({ authReady }),
+  setPasswordRecovery: (passwordRecovery) => set({ passwordRecovery }),
   finishOnboarding: () => {
     set({ onboarded: true });
     void persistOnboarding(true).catch(() => undefined);
@@ -53,7 +57,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     }
   },
   reset: () => {
-    set({ session: null, previewMode: false, onboarded: false });
+    set({ session: null, previewMode: false, passwordRecovery: false, onboarded: false });
     void persistOnboarding(false).catch(() => undefined);
   },
 }));
