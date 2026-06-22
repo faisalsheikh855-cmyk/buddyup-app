@@ -1,0 +1,1 @@
+window.BUDDYUP_ENV={"EXPO_PUBLIC_SUPABASE_URL":"https://qioolqchvoodnyntrvpz.supabase.co","EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY":"sb_publishable_bbaB9pfkZCmivE4osNrZPg_qTTnbckJ","EXPO_PUBLIC_SUPABASE_ANON_KEY":""};
